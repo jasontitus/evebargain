@@ -1,6 +1,18 @@
 # EVE Bargain - Regional Market Arbitrage Alerts
 
-A companion app for EVE Online that tracks your character's location across regions and alerts you when items are priced significantly below Jita market value -- enabling opportunistic arbitrage for players who travel frequently through wormholes and across New Eden.
+## What Is This?
+
+You know how the in-game market browser only shows you prices in your current region? And you know how some backwater region might have a Damage Control II listed for half what it goes for in Jita -- but you'd never know unless you happened to open the market and check?
+
+**EVE Bargain watches for you.**
+
+It runs on a second monitor (or your phone browser) while you play. Every time you jump into a new region -- whether you're roaming through lowsec, chain-rolling wormholes, or just autopiloting across the map -- it automatically checks: *"Is anything here selling for way less than Jita?"*
+
+If it finds a deal, you hear a chime. You glance over, see that someone in Aridia is selling Conflagration L for 20% under Jita price, and you decide whether it's worth buying a stack and hauling it back. Or you ignore it and keep flying. That's it.
+
+**You pick what matters to you.** Only care about ships and ammo? Track those. Want to watch for cheap manufacturing materials or underpriced SKINs? Add those categories. Set your own threshold -- maybe you only want to hear about 15%+ discounts, or maybe 10% is enough if the profit per unit is high.
+
+This is built for the player who's already traveling. You're not going out of your way to find deals -- you're just getting told about them when they're right in front of you.
 
 ## How It Works
 
