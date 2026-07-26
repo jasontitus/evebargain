@@ -1,5 +1,6 @@
 """Load EVE static data (item types, categories, groups) from ESI."""
 
+import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,11 @@ from app.services.esi_client import esi_client
 from app.utils.eve_constants import TRACKABLE_CATEGORIES
 
 logger = logging.getLogger(__name__)
+
+# How many /universe/types/ lookups to have outstanding per batch. Actual
+# concurrency is capped by the ESI client's semaphore; this bounds the task
+# list and keeps each transaction a reasonable size.
+TYPE_FETCH_CHUNK = 400
 
 
 async def load_categories(db: AsyncSession):
@@ -44,26 +50,39 @@ async def load_types_for_category(db: AsyncSession, category_id: int):
     group_ids = cat_data.get("groups", [])
     logger.info(f"Category {category_id} ({cat_data.get('name')}): {len(group_ids)} groups")
 
-    types_loaded = 0
-    for group_id in group_ids:
+    # Groups first, concurrently. The ESI client's semaphore is what actually
+    # bounds this; issuing them one at a time just left it idle.
+    async def fetch_group(group_id: int) -> tuple[int, list[int]]:
         try:
-            group_resp = await esi_client.get(f"/universe/groups/{group_id}/")
-            group_data = group_resp.json()
+            resp = await esi_client.get(f"/universe/groups/{group_id}/")
+            return group_id, resp.json().get("types", [])
         except Exception as e:
             logger.error(f"Failed to fetch group {group_id}: {e}")
-            continue
+            return group_id, []
 
-        type_ids = group_data.get("types", [])
+    groups = await asyncio.gather(*[fetch_group(g) for g in group_ids])
 
-        for type_id in type_ids:
-            try:
-                type_resp = await esi_client.get(f"/universe/types/{type_id}/")
-                type_data = type_resp.json()
-            except Exception as e:
-                logger.warning(f"Failed to fetch type {type_id}: {e}")
-                continue
+    # (type_id, group_id) for every type in the category.
+    pending = [(tid, gid) for gid, type_ids in groups for tid in type_ids]
+    logger.info(f"Category {category_id}: {len(pending)} types to fetch")
 
-            if not type_data.get("published", False):
+    async def fetch_type(type_id: int, group_id: int) -> tuple[int, int, dict | None]:
+        try:
+            resp = await esi_client.get(f"/universe/types/{type_id}/")
+            return type_id, group_id, resp.json()
+        except Exception as e:
+            logger.warning(f"Failed to fetch type {type_id}: {e}")
+            return type_id, group_id, None
+
+    types_loaded = 0
+    # Chunked so a category with thousands of types doesn't build one enormous
+    # task list or one enormous transaction.
+    for start in range(0, len(pending), TYPE_FETCH_CHUNK):
+        chunk = pending[start : start + TYPE_FETCH_CHUNK]
+        fetched = await asyncio.gather(*[fetch_type(t, g) for t, g in chunk])
+
+        for type_id, group_id, type_data in fetched:
+            if not type_data or not type_data.get("published", False):
                 continue
 
             stmt = sqlite_upsert(ItemType).values(
@@ -87,31 +106,46 @@ async def load_types_for_category(db: AsyncSession, category_id: int):
             await db.execute(stmt)
             types_loaded += 1
 
-        # Commit per group to avoid huge transactions
         await db.commit()
+        logger.info(
+            f"Category {category_id}: {min(start + TYPE_FETCH_CHUNK, len(pending))}"
+            f"/{len(pending)} types processed"
+        )
 
     logger.info(f"Loaded {types_loaded} types for category {category_id}")
 
 
-async def load_all_static_data(db: AsyncSession):
+async def load_all_static_data(db: AsyncSession, force: bool = False):
     """Load all static data needed for the application.
 
     This is run on first boot or via a management command.
     Skips loading if data already exists.
     """
-    # Check if we already have data
-    count = await db.execute(select(func.count(ItemType.type_id)))
-    existing = count.scalar()
-    if existing and existing > 100:
-        logger.info(f"Static data already loaded ({existing} types), skipping")
-        return
-
     logger.info("Loading EVE static data from ESI (this may take a while)...")
 
     await load_categories(db)
 
-    for category_id in TRACKABLE_CATEGORIES:
-        logger.info(f"Loading types for category {category_id} ({TRACKABLE_CATEGORIES[category_id]})")
+    # Skip per category rather than globally. A global row-count guard treats a
+    # run that died halfway as complete, which leaves the catalogue permanently
+    # short and every affected category silently dealless. Upserts are
+    # idempotent, so re-running an incomplete category is safe.
+    for category_id, category_name in TRACKABLE_CATEGORIES.items():
+        existing = (
+            await db.execute(
+                select(func.count(ItemType.type_id)).where(
+                    ItemType.category_id == category_id
+                )
+            )
+        ).scalar()
+
+        if existing and not force:
+            logger.info(
+                f"Category {category_id} ({category_name}) already has "
+                f"{existing} types, skipping"
+            )
+            continue
+
+        logger.info(f"Loading types for category {category_id} ({category_name})")
         await load_types_for_category(db, category_id)
 
     final_count = await db.execute(select(func.count(ItemType.type_id)))

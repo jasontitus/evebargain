@@ -1,16 +1,20 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import func, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-from app.database import init_db
+from app.database import async_session, init_db
+from app.models.item import ItemType
 from app.routers import auth, config, market, alerts, ws
 from app.services.esi_client import esi_client
+from app.services.sde_loader import load_all_static_data
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
@@ -24,12 +28,44 @@ logger = logging.getLogger(__name__)
 FRONTEND_URL = settings.frontend_url
 
 
+async def _ensure_static_data():
+    """Load the item catalogue on first boot if it isn't there yet.
+
+    find_arbitrage inner-joins ItemType to get names and categories, so an
+    empty table silently yields zero deals at every threshold -- the app looks
+    like it works and simply never finds anything. Leaving this as a manual
+    README step made that failure the default state, so do it automatically.
+    """
+    async with async_session() as db:
+        count = (await db.execute(select(func.count()).select_from(ItemType))).scalar()
+        if count:
+            logger.info("Static item data present (%d types)", count)
+            return
+
+        logger.warning(
+            "No item types in the database -- loading from ESI now. "
+            "Until this finishes, no deals can be found."
+        )
+        try:
+            await load_all_static_data(db)
+            total = (
+                await db.execute(select(func.count()).select_from(ItemType))
+            ).scalar()
+            logger.info("Static data load complete: %d item types", total)
+        except Exception:
+            logger.exception("Static data load failed -- deals will stay empty")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Starting EVE Bargain...")
     await init_db()
     start_scheduler()
+
+    # Runs in the background: it takes minutes on a cold database and the API
+    # should be answering requests in the meantime.
+    asyncio.create_task(_ensure_static_data())
 
     if not settings.eve_client_id or not settings.eve_secret_key:
         # Without these, /api/auth/login still redirects -- straight to an EVE

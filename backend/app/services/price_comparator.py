@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market import MarketCache
@@ -11,7 +11,7 @@ from app.models.user import UserConfig
 from app.models.alert import Alert
 from app.schemas.market import ArbitrageResult
 from app.services.location import get_region_name
-from app.utils.eve_constants import THE_FORGE_REGION_ID
+from app.utils.eve_constants import THE_FORGE_REGION_ID, TRACKABLE_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ async def find_arbitrage(
             local_cache.c.local_volume,
             jita_cache.c.jita_price,
             ItemType.name.label("type_name"),
+            ItemType.category_id.label("category_id"),
         )
         .join(jita_cache, local_cache.c.type_id == jita_cache.c.type_id)
         .join(ItemType, local_cache.c.type_id == ItemType.type_id)
@@ -72,6 +73,19 @@ async def find_arbitrage(
 
     result = await db.execute(query)
     rows = result.all()
+
+    if not rows:
+        # The query inner-joins ItemType, so an unpopulated catalogue produces
+        # zero deals at every threshold -- indistinguishable from a genuinely
+        # quiet market unless we say so.
+        item_count = (
+            await db.execute(select(func.count()).select_from(ItemType))
+        ).scalar()
+        if not item_count:
+            logger.error(
+                "No item types in the database: every region will report zero "
+                "deals regardless of threshold. Static data load has not run."
+            )
 
     deals = []
     for row in rows:
@@ -95,6 +109,8 @@ async def find_arbitrage(
         deals.append(ArbitrageResult(
             type_id=row.type_id,
             type_name=row.type_name,
+            category_id=row.category_id,
+            category_name=TRACKABLE_CATEGORIES.get(row.category_id),
             local_price=round(local_price, 2),
             jita_price=round(jita_price, 2),
             discount_pct=round(discount_pct, 4),
