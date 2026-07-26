@@ -30,6 +30,7 @@ This is built for the player who's already traveling. You're not going out of yo
 - **Live WebSocket notifications** -- instant alerts pushed to your browser
 - **Desktop notifications + sound** -- don't miss a deal even on a second monitor
 - **Sortable deal table** -- browse all opportunities by discount, profit, or name
+- **Region browsing** -- check any of the 70 k-space markets from a dropdown without flying there; alerts keep tracking your real location
 
 ## Tech Stack
 
@@ -215,7 +216,8 @@ The callback registered on your EVE developer application must match `EVE_CALLBA
 | GET | `/api/config/` | Get user configuration |
 | PUT | `/api/config/` | Update configuration |
 | GET | `/api/config/categories` | List trackable categories |
-| GET | `/api/market/deals` | Get arbitrage opportunities |
+| GET | `/api/market/deals` | Get arbitrage opportunities (`?region_id=` to browse elsewhere) |
+| GET | `/api/market/regions` | K-space regions for the browse dropdown |
 | POST | `/api/market/refresh` | Force market refresh |
 | GET | `/api/alerts/` | Alert history |
 | POST | `/api/alerts/{id}/dismiss` | Dismiss an alert |
