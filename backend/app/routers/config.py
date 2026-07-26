@@ -1,3 +1,20 @@
+"""HTTP endpoints for reading and updating the player's settings.
+
+The update endpoint takes a UserConfigUpdate, where every field is optional, so
+the browser can send only what changed. Hence the repeated
+
+    if update.some_field is not None:
+        config.some_field = update.some_field
+
+Checking against None rather than truthiness is deliberate: `if
+update.min_volume:` would treat a legitimate 0 as "not supplied" and silently
+ignore it.
+
+Note there is no explicit UPDATE statement. `config` is a live SQLAlchemy
+object attached to the session, so assigning to its attributes is enough --
+`db.commit()` works out what changed and writes it.
+"""
+
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -42,6 +59,7 @@ async def get_config(
         alert_discount_threshold=config.alert_discount_threshold,
         alert_min_profit_isk=config.alert_min_profit_isk,
         alert_min_volume=config.alert_min_volume,
+        alert_on_blueprints=config.alert_on_blueprints,
     )
 
 
@@ -85,6 +103,8 @@ async def update_config(
         config.alert_min_profit_isk = update.alert_min_profit_isk
     if update.alert_min_volume is not None:
         config.alert_min_volume = update.alert_min_volume
+    if update.alert_on_blueprints is not None:
+        config.alert_on_blueprints = update.alert_on_blueprints
 
     await db.commit()
 
@@ -98,6 +118,7 @@ async def update_config(
         alert_discount_threshold=config.alert_discount_threshold,
         alert_min_profit_isk=config.alert_min_profit_isk,
         alert_min_volume=config.alert_min_volume,
+        alert_on_blueprints=config.alert_on_blueprints,
     )
 
 

@@ -7,6 +7,7 @@ import pytest
 from app.models.alert import Alert
 from app.models.user import User, UserConfig
 from app.schemas.market import ArbitrageResult
+from app.utils.eve_constants import CATEGORY_BLUEPRINTS
 from app.services.price_comparator import (
     ALERT_COOLDOWN,
     create_alerts_from_deals,
@@ -14,10 +15,12 @@ from app.services.price_comparator import (
 )
 
 
-def _deal(type_id=34, discount=0.30, profit=2_000_000.0, volume=100, region=10000052):
+def _deal(type_id=34, discount=0.30, profit=2_000_000.0, volume=100, region=10000052,
+          category=6):
     return ArbitrageResult(
         type_id=type_id,
         type_name=f"Item {type_id}",
+        category_id=category,
         local_price=100.0,
         jita_price=200.0,
         discount_pct=discount,
@@ -38,6 +41,7 @@ def _config(**overrides):
         alert_discount_threshold=0.25,
         alert_min_profit_isk=1_000_000.0,
         alert_min_volume=5,
+        alert_on_blueprints=False,
     )
     for k, v in overrides.items():
         setattr(cfg, k, v)
@@ -129,3 +133,20 @@ async def test_duplicates_inside_one_batch_collapse(db_session):
     )
 
     assert len(created) == 1
+
+
+def test_blueprints_do_not_alert_by_default():
+    """BPOs and BPCs share a type_id, so a cheap copy reads as a 90%+ discount
+    against an original's Jita price. Real listing, fake margin."""
+    blueprint = _deal(category=CATEGORY_BLUEPRINTS, discount=0.95)
+    assert deals_worth_alerting([blueprint], _config()) == []
+
+
+def test_blueprints_alert_when_explicitly_enabled():
+    blueprint = _deal(category=CATEGORY_BLUEPRINTS, discount=0.95)
+    assert len(deals_worth_alerting([blueprint], _config(alert_on_blueprints=True))) == 1
+
+
+def test_the_blueprint_rule_does_not_touch_other_categories():
+    ship = _deal(category=6, discount=0.95)
+    assert len(deals_worth_alerting([ship], _config())) == 1

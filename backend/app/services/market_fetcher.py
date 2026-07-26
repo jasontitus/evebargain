@@ -1,3 +1,23 @@
+"""Pulling market orders from ESI and reducing them into the local cache.
+
+THE SHAPE OF THE WORK
+    ESI hands back raw sell orders -- one entry per listing, hundreds of
+    thousands for a busy region. This app does not need them individually; it
+    needs the single cheapest price per item. So each fetch is:
+
+        fetch all pages  ->  aggregate to lowest price per item  ->  upsert
+
+    "Upsert" means insert-or-update: the market_cache table has a uniqueness
+    rule on (region, item), so a row that already exists is overwritten rather
+    than duplicated. Doing that in one statement per batch is far faster than
+    reading each row to decide between INSERT and UPDATE.
+
+    The most valuable code here is the cheapest: is_cache_fresh. ESI serves
+    these pages from a ~300 second cache, so refetching sooner returns
+    byte-identical data. Skipping that is what took this app from roughly 6,800
+    requests an hour down to a few hundred.
+"""
+
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -31,6 +51,8 @@ async def fetch_region_sell_orders(
     )
 
     # Aggregate: find lowest sell price and total volume per type
+    # type_id -> running totals. Built in one pass over the orders rather than
+    # sorting or grouping, which would cost more for no benefit.
     aggregated: dict[int, dict] = {}
     for order in all_orders:
         type_id = order["type_id"]
@@ -112,10 +134,15 @@ async def update_market_cache(
     if not rows_to_upsert:
         return
 
-    # Batch upsert using SQLite INSERT OR REPLACE
+    # Written 500 rows at a time. One giant statement risks exceeding SQLite's
+    # limit on bound variables, and one statement per row would mean thousands
+    # of round trips.
     for batch_start in range(0, len(rows_to_upsert), 500):
         batch = rows_to_upsert[batch_start : batch_start + 500]
         stmt = sqlite_upsert(MarketCache).values(batch)
+        # "If a row with this (region, item) already exists, update it instead
+        # of failing." index_elements names the uniqueness rule to check
+        # against -- the one declared on the MarketCache model.
         stmt = stmt.on_conflict_do_update(
             index_elements=["region_id", "type_id"],
             set_={
@@ -132,7 +159,12 @@ async def update_market_cache(
 
 
 async def get_tracked_type_ids(db: AsyncSession, category_ids: list[int]) -> set[int]:
-    """Get all marketable type IDs for the given categories."""
+    """Every marketable item id in the given categories.
+
+    Returns a `set` rather than a list because callers use it purely for `in`
+    tests while filtering hundreds of thousands of orders -- that check is
+    constant-time on a set and linear on a list.
+    """
     result = await db.execute(
         select(ItemType.type_id).where(
             ItemType.category_id.in_(category_ids),

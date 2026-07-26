@@ -234,6 +234,26 @@ export function ConfigPanel() {
           </label>
         </div>
 
+        <div className="config-subfield">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={config.alert_on_blueprints}
+              onChange={(e) =>
+                applyChange({ alert_on_blueprints: e.target.checked })
+              }
+            />
+            <span>Alert on blueprints</span>
+          </label>
+        </div>
+        <p className="config-help">
+          Off by default. EVE gives blueprint originals and copies the same item
+          ID, so a cheap copy on sale locally looks like a 90%+ discount against
+          an original's Jita price. The deals are real listings but not real
+          margins, and they crowd everything else out of your alerts. They still
+          appear in the table.
+        </p>
+
         {config.alert_discount_threshold < config.discount_threshold && (
           <p className="config-warning">
             This is looser than the table filter above, so every row shown will

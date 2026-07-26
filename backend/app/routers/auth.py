@@ -1,3 +1,22 @@
+"""Login, logout, and the EVE Single Sign-On round trip.
+
+HOW OAUTH LOGIN WORKS HERE, STEP BY STEP
+    1. Browser hits /api/auth/login. We do not ask for a password -- we
+       redirect to CCP's login page with our app id and a random `state` value.
+    2. The player logs in on CCP's site. We never see their credentials.
+    3. CCP redirects back to /api/auth/callback with a short-lived `code`,
+       and the same `state` we sent.
+    4. We check the state matches (this is the CSRF defence: it proves the
+       response belongs to a login *we* started), then trade the code with CCP
+       for access and refresh tokens.
+    5. We store the tokens, put the user id in the session cookie, and send the
+       browser back to the frontend.
+
+    The access token expires in about 20 minutes; the refresh token is used to
+    quietly obtain new ones, which is why polling keeps working for days
+    without another login.
+"""
+
 import secrets
 from datetime import datetime
 

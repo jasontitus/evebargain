@@ -1,5 +1,10 @@
 """Jump distances from the character's system to other regions.
 
+WHY THIS FILE EXISTS AT ALL
+    ESI can answer "how far is system A from system B?" but has no notion of
+    "which regions are near me". A region is a large area containing dozens of
+    systems, so it has no single position -- this file has to approximate one.
+
 ESI has no "regions within N jumps" endpoint, so this routes to a sample of
 systems per region and keeps the shortest. Routing to every system would be
 thousands of requests per origin; routing to just one would report a region as

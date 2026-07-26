@@ -1,3 +1,29 @@
+"""HTTP endpoints for market data: deals, regions, and the nearby scan.
+
+HOW A FASTAPI ROUTE WORKS
+    The `@router.get("/deals")` line above a function is a *decorator*: it
+    registers that function to handle GET requests for that path. You never
+    call these functions yourself -- FastAPI calls them when a request arrives.
+
+    Function parameters become the request's inputs, and where they come from
+    depends on how they are declared:
+
+        min_discount: float = 0.0        a query string value, ?min_discount=
+        user: User = Depends(...)        dependency injection (see below)
+
+    `Depends(get_db)` means "run get_db, and pass me what it produced". FastAPI
+    resolves the chain before the route body runs, which is how every route
+    gets an authenticated user and a database session without repeating the
+    lookup code. If the dependency raises -- say, nobody is logged in -- the
+    route body never runs at all.
+
+    The `response_model=` argument names a schema. FastAPI uses it to convert
+    the return value to JSON and to document the endpoint at /docs.
+
+    Raising `HTTPException` is how a route reports a problem; it becomes a
+    proper HTTP status and JSON body rather than a 500 crash.
+"""
+
 import logging
 import json
 from datetime import datetime
@@ -40,6 +66,12 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 async def _get_authenticated_user(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> User:
+    """Resolve the logged-in user, or reject the request.
+
+    Used as a dependency by every route in this file, so none of them has to
+    repeat the check. The session cookie holds only the user id; the browser
+    cannot tamper with it because the cookie is signed with SESSION_SECRET.
+    """
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -272,10 +304,10 @@ async def get_deals(
             user.id, "compare", browsed_name, 1, 1, done=True
         )
 
-    # Find deals
+    # Runs entirely against the local cache -- see price_comparator.
     deals = await find_arbitrage(db, target_region, user_config)
 
-    # Apply additional filters
+    # An extra, per-request narrowing on top of the user's saved threshold.
     if min_discount > 0:
         deals = [d for d in deals if d.discount_pct >= min_discount]
 

@@ -1,3 +1,17 @@
+"""Where the player's character is, and what the regions are called.
+
+EVE's map is a hierarchy: solar system -> constellation -> region. ESI only
+tells you the system a character is in, so finding the region means two more
+lookups up that chain.
+
+CACHING, AND WHY IT IS SAFE HERE
+    Every lookup in this file is memoized in a module-level dictionary and never
+    expires. That would be reckless for prices, but this is universe geometry:
+    systems do not move between regions, and regions do not get renamed. The
+    location poller runs every 30 seconds, so without caching it would ask ESI
+    the same three questions forever.
+"""
+
 import asyncio
 import logging
 
@@ -28,8 +42,12 @@ async def list_regions() -> dict[int, str]:
     if _all_regions_cache:
         return _all_regions_cache
 
+    # A lock prevents two callers arriving at once from both deciding the cache
+    # is empty and both doing the work. Only one gets in; the other waits.
     async with _all_regions_lock:
-        # Another coroutine may have populated it while we waited.
+        # ...and then finds it already populated, hence this second check.
+        # (Checking twice, either side of the lock, is a standard pattern: the
+        # first check avoids taking the lock in the common case.)
         if _all_regions_cache:
             return _all_regions_cache
 
@@ -62,7 +80,8 @@ async def get_character_location(character_id: int, token: str) -> dict:
 async def resolve_system_to_region(system_id: int) -> int:
     """Resolve a solar system ID to its region ID.
 
-    Results are cached permanently (universe structure is static).
+    Two hops up the map hierarchy: system -> constellation -> region. Results
+    are cached permanently, since the universe structure is static.
     """
     if system_id in _system_region_cache:
         return _system_region_cache[system_id]
@@ -97,6 +116,12 @@ async def detect_region_change(
 
     Returns (system_id, region_id, changed) where changed is True
     if the region differs from current_region_id.
+
+    Returning a tuple lets the caller unpack three values in one line:
+        system_id, region_id, changed = await detect_region_change(...)
+
+    `changed` is what triggers a market scan -- moving within a region does not
+    change what is for sale there, so only a region crossing is worth acting on.
     """
     location = await get_character_location(character_id, token)
     system_id = location["solar_system_id"]

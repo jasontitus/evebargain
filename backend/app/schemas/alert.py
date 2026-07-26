@@ -1,3 +1,5 @@
+"""API shapes for the alert feed."""
+
 from datetime import datetime
 
 from pydantic import BaseModel

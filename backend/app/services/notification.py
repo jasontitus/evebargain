@@ -1,3 +1,25 @@
+"""Pushing live updates to the browser over WebSockets.
+
+WHY WEBSOCKETS
+    Normal HTTP is one-way: the browser asks, the server answers. Alerts need
+    the opposite -- the server learns something and wants to tell a browser
+    that is not currently asking. A WebSocket is a connection that stays open
+    so either side can send at any time.
+
+WHAT THE MANAGER TRACKS
+    `_connections` maps a user id to the list of open sockets for that user --
+    a list, not a single socket, because the same person may have the dashboard
+    and the popout window open at once, and both should update.
+
+    The key is the *database* user id. Registering under anything else means
+    messages are addressed to a key with no socket on it, and nothing arrives
+    at all -- which is exactly the bug that made alerts silently never work.
+
+    Sending to a closed socket raises, so failures are collected during the
+    send loop and removed afterwards. Removing items from a list while
+    iterating over it skips elements, so the two steps must stay separate.
+"""
+
 import json
 import logging
 from datetime import datetime

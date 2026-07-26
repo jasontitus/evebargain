@@ -1,4 +1,25 @@
-"""Background task scheduler for location polling and market updates."""
+"""Background jobs: watching where the player is, and rescanning the market.
+
+WHAT A SCHEDULER IS DOING HERE
+    A web server only runs code when a request arrives. This app needs to keep
+    working while nobody is clicking anything -- checking every 30 seconds
+    whether the character jumped to a new region. APScheduler provides that: it
+    runs functions on a timer inside the same process.
+
+    Two jobs exist per logged-in player:
+      location_poll_<id>  every 30s   where are they? if the region changed,
+                                      scan it immediately
+      market_scan_<id>    every 300s  rescan the current region regardless
+
+    Job ids are built from the user id so that re-registering replaces the old
+    job rather than stacking a second one.
+
+A GOTCHA WORTH KNOWING
+    These jobs are registered in the SSO callback -- that is, at login. They
+    live in memory, so restarting the backend clears them, and polling stays
+    stopped until someone logs in again. Deals still render from cached data,
+    which makes it easy to miss.
+"""
 
 import json
 import logging
@@ -89,6 +110,10 @@ async def scan_market_for_user(
 
             region_name = await location.get_region_name(target_region)
 
+            # A function that builds a function. The inner `report` remembers
+            # `phase` and `name` from the call that created it (a closure), so
+            # each fetch can report progress tagged with its own phase without
+            # those values being passed down through every layer.
             def progress_for(phase: str, name: str):
                 async def report(completed: int, total: int):
                     await ws_manager.send_progress(
@@ -123,6 +148,9 @@ async def scan_market_for_user(
             # cooldown, so this is genuinely new finds only.
             new_alerts = await create_alerts_from_deals(db, user_id, alertable)
 
+            # Only deals that produced a *new* alert row get pushed to the
+            # browser. Anything inside the cooldown was filtered out already,
+            # which is what keeps a standing deal from re-notifying every scan.
             by_type = {(a.type_id, a.region_id) for a in new_alerts}
             for deal in deals:
                 if (deal.type_id, deal.region_id) in by_type:

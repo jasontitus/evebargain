@@ -1,3 +1,11 @@
+"""HTTP endpoints for the alert feed: list, dismiss, and clear.
+
+Dismissing marks a row rather than deleting it. The alert history is what
+suppresses repeat notifications for the same deal, so deleting a dismissed
+alert would make it eligible to fire again immediately -- exactly the opposite
+of what dismissing it implies.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession

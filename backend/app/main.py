@@ -1,3 +1,25 @@
+"""The application entry point: builds the FastAPI app and wires it together.
+
+WHAT UVICORN RUNS
+    Starting the server with `uvicorn app.main:app` means "import app/main.py,
+    find the variable named `app`, and serve it". Everything below exists to
+    build that object.
+
+THE PIECES, IN ORDER
+    lifespan()    startup and shutdown. Code before `yield` runs once as the
+                  server starts; code after runs as it stops. This is where the
+                  database is prepared and background jobs begin.
+    middleware    wrappers around every request. SessionMiddleware reads and
+                  writes the signed login cookie; CORSMiddleware tells browsers
+                  it is legitimate for the frontend on port 5173 to call this
+                  API on port 8000.
+    routers       the endpoints themselves, grouped by topic in routers/.
+                  Including a router adds all its paths to the app.
+    handlers      the 404 handler below turns "wrong port" -- the most likely
+                  cause of a stray browser request here -- into an explanation
+                  rather than a bare error.
+"""
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -69,8 +91,9 @@ async def lifespan(app: FastAPI):
     await init_db()
     start_scheduler()
 
-    # Runs in the background: it takes minutes on a cold database and the API
-    # should be answering requests in the meantime.
+    # `create_task` starts this running and immediately moves on, rather than
+    # waiting for it. A cold catalogue load takes minutes, and blocking startup
+    # on it would leave the server refusing connections that whole time.
     asyncio.create_task(_ensure_static_data())
 
     if not settings.eve_client_id or not settings.eve_secret_key:

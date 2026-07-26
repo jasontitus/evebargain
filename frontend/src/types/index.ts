@@ -17,6 +17,7 @@ export interface UserConfig {
   alert_discount_threshold: number;
   alert_min_profit_isk: number;
   alert_min_volume: number;
+  alert_on_blueprints: boolean;
 }
 
 export interface UserConfigUpdate {
@@ -29,6 +30,7 @@ export interface UserConfigUpdate {
   alert_discount_threshold?: number;
   alert_min_profit_isk?: number;
   alert_min_volume?: number;
+  alert_on_blueprints?: boolean;
 }
 
 export interface CategoryInfo {

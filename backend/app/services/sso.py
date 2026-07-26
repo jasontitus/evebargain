@@ -1,3 +1,19 @@
+"""Exchanging and refreshing EVE Single Sign-On tokens.
+
+THE TWO TOKENS
+    access token   proves who we are to ESI. Expires in ~20 minutes.
+    refresh token  long-lived; used to obtain a new access token without the
+                   player logging in again.
+
+    `get_valid_token` is the function the rest of the app uses. It checks
+    whether the stored access token is still good and silently refreshes it if
+    not, so callers never have to think about expiry.
+
+    Tokens are secrets: anyone holding them can act as that character within
+    the granted scopes. They are stored in the database and deliberately never
+    included in any API response -- see schemas/user.py.
+"""
+
 import base64
 import hashlib
 import logging

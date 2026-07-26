@@ -1,4 +1,24 @@
-"""Load EVE static data (item types, categories, groups) from ESI."""
+"""Loading the item catalogue from ESI: categories, groups, and every item.
+
+WHAT "STATIC DATA" MEANS
+    EVE's item list changes only when CCP patches the game, so this is fetched
+    once and kept. It is slow to build -- roughly 18,000 items, one request
+    each -- but it is the thing that makes everything else possible: without
+    it, prices are just anonymous numeric ids and no category filter can work.
+
+THE STRUCTURE, AND WHY IT IS FETCHED THIS WAY
+    ESI arranges items as category -> groups -> types, so building the list
+    means walking down that tree. The requests are issued concurrently in
+    batches rather than one at a time: sequentially this took hours, and the
+    ESI client already caps how many run at once.
+
+RESUMABILITY
+    Both loaders check what is already present and fetch only what is missing --
+    per category for the main load, per row for the volume backfill. That makes
+    an interrupted run safe to repeat, and a completed one nearly free. An
+    earlier version guarded on a single total row count and treated a run that
+    died halfway as finished, which left the catalogue permanently short.
+"""
 
 import asyncio
 import logging

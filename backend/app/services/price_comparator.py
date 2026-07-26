@@ -1,3 +1,29 @@
+"""The heart of the app: comparing local prices against Jita to find deals.
+
+THE QUERY, IN PLAIN ENGLISH
+    find_arbitrage builds one SQL statement that says:
+
+        take every cached price in THIS region        (the `local` subquery)
+        alongside every cached price in JITA          (the `jita` subquery)
+        matched up by item                            (the join on type_id)
+        keeping only items the player cares about     (category filter)
+        and only where the local price is lower       (the price comparison)
+
+    Doing it as a single query rather than looping in Python matters: a region
+    can hold tens of thousands of cached prices, and the database can match
+    them far faster than fetching them all into memory first.
+
+    A *subquery* is just a query used as if it were a table. Two are needed
+    here because both sides come from the same `market_cache` table -- one
+    filtered to this region, one to Jita -- and they must be told apart.
+
+    Note the join is an INNER join, which drops rows with no match on either
+    side. That is deliberate for prices, but it also applies to the ItemType
+    join: with an empty catalogue every row is dropped and the result is zero
+    deals at any threshold. That failure is silent by nature, hence the
+    explicit check and loud log after the query runs.
+"""
+
 import json
 import logging
 from datetime import datetime, timedelta
@@ -11,7 +37,11 @@ from app.models.user import UserConfig
 from app.models.alert import Alert
 from app.schemas.market import ArbitrageResult
 from app.services.location import get_region_name
-from app.utils.eve_constants import THE_FORGE_REGION_ID, TRACKABLE_CATEGORIES
+from app.utils.eve_constants import (
+    CATEGORY_BLUEPRINTS,
+    THE_FORGE_REGION_ID,
+    TRACKABLE_CATEGORIES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +60,17 @@ async def find_arbitrage(
 
     Returns a list of ArbitrageResult for items that meet the user's
     discount threshold and filtering criteria.
+
+    Reads only from the local cache -- it never calls ESI. Whoever calls this
+    is responsible for having refreshed the cache first, which is why the
+    endpoints and the scanner fetch before comparing.
     """
+    # Stored as JSON text because SQLite has no array type, so it has to be
+    # parsed back into a Python list before use.
     tracked_categories = json.loads(user_config.tracked_category_ids)
     if not tracked_categories:
+        # Tracking nothing legitimately matches nothing. Returning early also
+        # avoids building a query with an empty IN () clause.
         return []
 
     region_name = await get_region_name(region_id)
@@ -101,10 +139,14 @@ async def find_arbitrage(
         if jita_price <= 0:
             continue
 
+        # As a fraction of the Jita price: 200 ISK here against 1000 in Jita
+        # is (1000-200)/1000 = 0.8, i.e. 80% off.
         discount_pct = (jita_price - local_price) / jita_price
         profit_per_unit = jita_price - local_price
 
-        # Apply user filters
+        # These three are the *browse* filters -- what fills the table. The
+        # separate, stricter alert filters live in deals_worth_alerting below.
+        # `continue` skips to the next item in the loop.
         if discount_pct < user_config.discount_threshold:
             continue
         if profit_per_unit < user_config.min_profit_isk:
@@ -137,7 +179,9 @@ async def find_arbitrage(
             region_name=region_name,
         ))
 
-    # Sort by discount percentage descending
+    # `key=lambda d: ...` tells sort what to compare -- here, each deal's
+    # discount rather than the object itself. reverse=True puts the biggest
+    # first. (A lambda is just a small unnamed function.)
     deals.sort(key=lambda d: d.discount_pct, reverse=True)
 
     logger.info(
@@ -156,12 +200,20 @@ def deals_worth_alerting(
     should make a noise?". Sharing one threshold for both forced the dashboard
     to be as quiet as the alerts, or the alerts as noisy as the dashboard.
     """
+    # A list comprehension: "give me every d in deals where all the conditions
+    # hold". The equivalent for-loop with an append would be several times as
+    # long and no clearer.
     return [
         d
         for d in deals
         if d.discount_pct >= user_config.alert_discount_threshold
         and d.profit_per_unit >= user_config.alert_min_profit_isk
         and d.volume_available >= user_config.alert_min_volume
+        # Blueprints are excluded unless explicitly enabled -- see the note on
+        # UserConfig.alert_on_blueprints. Their headline discounts are an
+        # artefact of originals and copies sharing a type_id, and left in they
+        # dominate every alert.
+        and (user_config.alert_on_blueprints or d.category_id != CATEGORY_BLUEPRINTS)
     ]
 
 
@@ -183,6 +235,7 @@ async def create_alerts_from_deals(
     if not deals:
         return []
 
+    # Anything raised more recently than this counts as "already seen".
     cutoff = datetime.utcnow() - ALERT_COOLDOWN
     recent = await db.execute(
         select(Alert.type_id, Alert.region_id).where(
@@ -190,6 +243,9 @@ async def create_alerts_from_deals(
             Alert.created_at >= cutoff,
         )
     )
+    # A set of (type_id, region_id) pairs. Sets test membership in constant
+    # time, so the `in` check in the loop below stays fast no matter how many
+    # alerts already exist.
     already_raised = set(recent.all())
 
     alerts = []
