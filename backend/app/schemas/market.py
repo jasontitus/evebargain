@@ -13,6 +13,8 @@ class ArbitrageResult(BaseModel):
     volume_available: int
     region_id: int
     region_name: str
+    # Jumps from the character, set only by the nearby scan.
+    jumps: int | None = None
 
 
 class MarketDealResponse(BaseModel):
@@ -28,8 +30,22 @@ class MarketDealResponse(BaseModel):
 class RegionSummary(BaseModel):
     region_id: int
     name: str
+    # Jumps from the character's current system. None when not measured, or
+    # when no route exists under the requested safety flag.
+    jumps: int | None = None
 
 
 class RegionListResponse(BaseModel):
     regions: list[RegionSummary]
     current_region_id: int | None = None
+
+
+class NearbyDealsResponse(BaseModel):
+    deals: list[ArbitrageResult]
+    regions_scanned: int
+    regions_in_range: int
+    max_jumps: int
+    flag: str
+    # Set when the scan was capped, so the UI can say so rather than implying
+    # the result is complete.
+    truncated: bool = False

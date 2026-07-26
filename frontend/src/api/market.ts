@@ -1,5 +1,11 @@
 import { api } from './client';
-import type { MarketDealResponse, AlertListResponse, RegionListResponse } from '../types';
+import type {
+  MarketDealResponse,
+  AlertListResponse,
+  RegionListResponse,
+  NearbyDealsResponse,
+  RouteFlag,
+} from '../types';
 
 export async function getDeals(
   sortBy: string = 'discount',
@@ -19,6 +25,23 @@ export async function getDeals(
 
 export async function getRegions(): Promise<RegionListResponse> {
   return api.get<RegionListResponse>('/market/regions');
+}
+
+/**
+ * Scan every region within maxJumps. Expensive -- each region in range costs
+ * an order-book fetch -- so this is deliberately on-demand only.
+ */
+export async function getNearbyDeals(
+  maxJumps: number,
+  flag: RouteFlag,
+  sortBy: string
+): Promise<NearbyDealsResponse> {
+  const params = new URLSearchParams({
+    max_jumps: maxJumps.toString(),
+    flag,
+    sort_by: sortBy,
+  });
+  return api.get<NearbyDealsResponse>(`/market/nearby?${params}`);
 }
 
 export async function refreshMarket(): Promise<{ message: string }> {

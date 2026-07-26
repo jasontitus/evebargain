@@ -41,6 +41,8 @@ export interface ArbitrageResult {
   volume_available: number;
   region_id: number;
   region_name: string;
+  /** Jumps from the character; only the nearby scan sets this. */
+  jumps: number | null;
 }
 
 export interface MarketDealResponse {
@@ -55,11 +57,26 @@ export interface MarketDealResponse {
 export interface RegionSummary {
   region_id: number;
   name: string;
+  /** Jumps from the character, present only when a range was requested. */
+  jumps: number | null;
 }
 
 export interface RegionListResponse {
   regions: RegionSummary[];
   current_region_id: number | null;
+}
+
+/** Route preference. "secure" is highsec-only and can be far longer. */
+export type RouteFlag = 'shortest' | 'secure' | 'insecure';
+
+export interface NearbyDealsResponse {
+  deals: ArbitrageResult[];
+  regions_scanned: number;
+  regions_in_range: number;
+  max_jumps: number;
+  flag: RouteFlag;
+  /** True when the scan hit its region cap and isn't a complete picture. */
+  truncated: boolean;
 }
 
 export interface Alert {
@@ -94,8 +111,8 @@ export interface WSMessage {
 }
 
 export interface FetchProgress {
-  /** Which leg of the scan: the local region, Jita, or the comparison. */
-  phase: 'region' | 'jita' | 'compare';
+  /** Which leg of the scan: the local region, Jita, the comparison, or a nearby sweep. */
+  phase: 'region' | 'jita' | 'compare' | 'nearby';
   region_name: string;
   completed: number;
   total: number;

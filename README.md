@@ -31,6 +31,7 @@ This is built for the player who's already traveling. You're not going out of yo
 - **Desktop notifications + sound** -- don't miss a deal even on a second monitor
 - **Sortable deal table** -- browse all opportunities by discount, profit, or name
 - **Region browsing** -- check any of the 70 k-space markets from a dropdown without flying there; alerts keep tracking your real location
+- **Nearby scan** -- sweep every region within 5/10/15/20 jumps at once, with a route preference (shortest, highsec-only, avoid highsec) and a jumps column
 
 ## Tech Stack
 
@@ -217,7 +218,8 @@ The callback registered on your EVE developer application must match `EVE_CALLBA
 | PUT | `/api/config/` | Update configuration |
 | GET | `/api/config/categories` | List trackable categories |
 | GET | `/api/market/deals` | Get arbitrage opportunities (`?region_id=` to browse elsewhere) |
-| GET | `/api/market/regions` | K-space regions for the browse dropdown |
+| GET | `/api/market/regions` | K-space regions (`?max_jumps=&flag=` to annotate/filter by distance) |
+| GET | `/api/market/nearby` | Scan every region within `?max_jumps=` of the character |
 | POST | `/api/market/refresh` | Force market refresh |
 | GET | `/api/alerts/` | Alert history |
 | POST | `/api/alerts/{id}/dismiss` | Dismiss an alert |
@@ -276,6 +278,27 @@ ESI's hard limit is an *error* rate limit, surfaced via
 `X-Esi-Error-Limit-Remain` and a 420 response; `esi_client.py` backs off and
 retries once when it sees one. Successful requests are not capped by a
 documented rate, but that is not licence to hammer it.
+
+### Nearby scanning
+
+ESI has no "regions within N jumps" endpoint, so `services/jumps.py` builds it
+from `/route/`: sample 4 systems spread across each region's constellations,
+route to each, and keep the shortest. A region counts as in range if any
+sampled part of it is. This is an approximation -- a region whose nearest
+corner falls between samples reads slightly farther than it is. Raise
+`SAMPLES_PER_REGION` to tighten it at a linear cost in requests.
+
+Route preference matters enormously and is exposed in the UI rather than
+assumed. Measured from a Kador system: Jita is **6 jumps** by the shortest
+route and **50 jumps** staying in highsec, and a 15-jump radius covers **20
+regions** shortest-route but only **9** highsec-only.
+
+Results are cached by `(origin, destination, flag)` for the process lifetime,
+since the topology is static. A cold measurement is ~276 route lookups and
+~15s; afterwards it's instant. The scan itself is capped at
+`MAX_NEARBY_REGIONS` (25) because each region in range costs an order-book
+fetch, and the response sets `truncated` when the cap bit. It only ever runs
+on demand -- never on a timer.
 
 For reference, measured against live ESI: there are **114 regions**, and
 fetching page 1 of every one of them totals **1,210 pages** for a complete

@@ -4,6 +4,7 @@ const PHASE_LABEL: Record<FetchProgress['phase'], string> = {
   region: 'Reading orders in',
   jita: 'Reading Jita orders',
   compare: 'Comparing prices in',
+  nearby: 'Scanning nearby regions --',
 };
 
 /**
@@ -15,7 +16,9 @@ export function FetchProgressBar({ progress }: { progress: FetchProgress }) {
   const { phase, region_name, completed, total } = progress;
   const pct = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
   const label = PHASE_LABEL[phase] ?? 'Scanning';
+  // The jita phase names its own market; the rest carry a region or a count.
   const showsRegion = phase !== 'jita';
+  const showsPages = total > 1 && phase !== 'nearby';
 
   return (
     <div className="fetch-progress" role="status" aria-live="polite">
@@ -23,7 +26,7 @@ export function FetchProgressBar({ progress }: { progress: FetchProgress }) {
         <span>
           {label}
           {showsRegion && ` ${region_name}`}
-          {total > 1 && ` -- page ${completed} of ${total}`}
+          {showsPages && ` -- page ${completed} of ${total}`}
         </span>
         {total > 1 && <span className="fetch-progress-pct">{pct}%</span>}
       </div>

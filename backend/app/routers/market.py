@@ -1,3 +1,4 @@
+import logging
 import json
 from datetime import datetime
 
@@ -11,18 +12,27 @@ from app.models.market import MarketCache
 from app.schemas.market import (
     ArbitrageResult,
     MarketDealResponse,
+    NearbyDealsResponse,
     RegionListResponse,
     RegionSummary,
 )
 from app.services.price_comparator import find_arbitrage
 from app.services.location import get_region_name, list_regions as get_all_regions
+from app.services.jumps import region_distances
 from app.services.market_fetcher import (
     get_tracked_type_ids,
     update_jita_cache,
     update_market_cache,
 )
+from app.services.notification import ws_manager
 from app.tasks.scheduler import scan_market_for_user
 from app.utils.eve_constants import THE_FORGE_REGION_ID
+
+logger = logging.getLogger(__name__)
+
+# A 15-jump radius can cover a large slice of the map, and every region costs
+# an order-book fetch. Cap the work and tell the caller when the cap bit.
+MAX_NEARBY_REGIONS = 25
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -41,6 +51,8 @@ async def _get_authenticated_user(
 
 @router.get("/regions", response_model=RegionListResponse)
 async def list_market_regions(
+    max_jumps: int | None = None,
+    flag: str = "shortest",
     user: User = Depends(_get_authenticated_user),
 ):
     """Every k-space region, for the browse-elsewhere dropdown.
@@ -48,15 +60,132 @@ async def list_market_regions(
     The Forge is omitted: it's the reference market every other region is
     priced against, so there is nothing to compare it to. Offering it would
     just be an option that always errors.
+
+    Passing max_jumps annotates each region with its distance from the
+    character's current system and drops the ones out of range.
     """
     regions = await get_all_regions()
+    distances: dict[int, int] = {}
+
+    if max_jumps is not None:
+        if not user.current_system_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Location not yet detected, so distances can't be measured.",
+            )
+        try:
+            distances = await region_distances(
+                user.current_system_id, flag=flag, max_jumps=max_jumps
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    summaries = [
+        RegionSummary(region_id=rid, name=name, jumps=distances.get(rid))
+        for rid, name in regions.items()
+        if rid != THE_FORGE_REGION_ID
+        and (max_jumps is None or rid in distances)
+    ]
+    # Nearest first when distances are known; otherwise alphabetical.
+    if max_jumps is not None:
+        summaries.sort(key=lambda r: (r.jumps if r.jumps is not None else 999, r.name))
+    else:
+        summaries.sort(key=lambda r: r.name)
+
     return RegionListResponse(
-        regions=[
-            RegionSummary(region_id=rid, name=name)
-            for rid, name in sorted(regions.items(), key=lambda kv: kv[1])
-            if rid != THE_FORGE_REGION_ID
-        ],
+        regions=summaries,
         current_region_id=user.current_region_id,
+    )
+
+
+@router.get("/nearby", response_model=NearbyDealsResponse)
+async def nearby_deals(
+    max_jumps: int = 10,
+    flag: str = "shortest",
+    sort_by: str = "discount",
+    user: User = Depends(_get_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Arbitrage across every region within max_jumps of the character.
+
+    Each region still needs its order book, so this is the expensive endpoint.
+    The cache-freshness guard means a repeat scan within the ESI cache window
+    costs nothing, and the scan is capped at MAX_NEARBY_REGIONS.
+    """
+    if not user.current_system_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Location not yet detected. Make sure you're logged into EVE.",
+        )
+
+    result = await db.execute(select(UserConfig).where(UserConfig.user_id == user.id))
+    user_config = result.scalar_one_or_none()
+    if not user_config:
+        raise HTTPException(status_code=400, detail="Config not found")
+
+    try:
+        distances = await region_distances(
+            user.current_system_id, flag=flag, max_jumps=max_jumps
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # The Forge is the reference market, not a destination.
+    targets = sorted(
+        ((r, j) for r, j in distances.items() if r != THE_FORGE_REGION_ID),
+        key=lambda rj: rj[1],
+    )
+    in_range = len(targets)
+    truncated = in_range > MAX_NEARBY_REGIONS
+    if truncated:
+        logger.info(
+            f"Nearby scan capped at {MAX_NEARBY_REGIONS} of {in_range} regions "
+            f"within {max_jumps} jumps"
+        )
+        targets = targets[:MAX_NEARBY_REGIONS]
+
+    tracked = json.loads(user_config.tracked_category_ids)
+    type_ids = await get_tracked_type_ids(db, tracked)
+
+    # Jita once up front -- every comparison needs it.
+    await update_jita_cache(db, type_ids=type_ids)
+
+    all_deals: list[ArbitrageResult] = []
+    for index, (region_id, jumps) in enumerate(targets, start=1):
+        await ws_manager.send_progress(
+            user.id, "nearby", f"{index} of {len(targets)} regions", index, len(targets)
+        )
+        try:
+            await update_market_cache(db, region_id, type_filter=type_ids)
+            region_deals = await find_arbitrage(db, region_id, user_config)
+        except Exception:
+            logger.exception(f"Nearby scan failed for region {region_id}")
+            continue
+
+        for deal in region_deals:
+            deal.jumps = jumps
+        all_deals.extend(region_deals)
+
+    await ws_manager.send_progress(
+        user.id, "nearby", "done", len(targets), len(targets), done=True
+    )
+
+    if sort_by == "profit":
+        all_deals.sort(key=lambda d: d.profit_per_unit, reverse=True)
+    elif sort_by == "name":
+        all_deals.sort(key=lambda d: d.type_name)
+    elif sort_by == "jumps":
+        all_deals.sort(key=lambda d: (d.jumps if d.jumps is not None else 999, -d.discount_pct))
+    else:
+        all_deals.sort(key=lambda d: d.discount_pct, reverse=True)
+
+    return NearbyDealsResponse(
+        deals=all_deals,
+        regions_scanned=len(targets),
+        regions_in_range=in_range,
+        max_jumps=max_jumps,
+        flag=flag,
+        truncated=truncated,
     )
 
 

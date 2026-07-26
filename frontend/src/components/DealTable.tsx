@@ -1,10 +1,33 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ArbitrageResult, RegionSummary, FetchProgress } from '../types';
-import { getDeals, getRegions, refreshMarket } from '../api/market';
+import type {
+  ArbitrageResult,
+  RegionSummary,
+  FetchProgress,
+  RouteFlag,
+} from '../types';
+import { getDeals, getRegions, getNearbyDeals, refreshMarket } from '../api/market';
 import { formatISK, formatISKCompact, formatPercent } from '../utils/format';
 import { FetchProgressBar } from './FetchProgressBar';
 
-type SortField = 'discount' | 'profit' | 'name';
+type SortField = 'discount' | 'profit' | 'name' | 'jumps';
+
+/** Where deals are being read from: the character's region, a browsed one, or a jump radius. */
+type Scope = 'live' | 'region' | 'nearby';
+
+interface NearbyMeta {
+  regionsScanned: number;
+  regionsInRange: number;
+  maxJumps: number;
+  truncated: boolean;
+}
+
+const JUMP_RANGES = [5, 10, 15, 20];
+
+const FLAG_LABELS: Record<RouteFlag, string> = {
+  shortest: 'Shortest route',
+  secure: 'Highsec only',
+  insecure: 'Avoid highsec',
+};
 
 interface DealTableProps {
   /** Live scan progress pushed over the WebSocket, or null when idle. */
@@ -23,6 +46,11 @@ export function DealTable({ progress = null }: DealTableProps) {
   const [selectedRegion, setSelectedRegion] = useState<number | null>(null);
   const [regionName, setRegionName] = useState<string | null>(null);
   const [isBrowsed, setIsBrowsed] = useState(false);
+  const [scope, setScope] = useState<Scope>('live');
+  const [maxJumps, setMaxJumps] = useState(10);
+  const [routeFlag, setRouteFlag] = useState<RouteFlag>('shortest');
+  const [nearbyMeta, setNearbyMeta] = useState<NearbyMeta | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [nameFilter, setNameFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
@@ -31,6 +59,9 @@ export function DealTable({ progress = null }: DealTableProps) {
   const availableCategories = Array.from(
     new Set(deals.map((d) => d.category_name).filter((c): c is string => !!c))
   ).sort();
+
+  // Nearby results span regions, so where a deal is becomes worth a column.
+  const showsLocation = scope === 'nearby';
 
   const needle = nameFilter.trim().toLowerCase();
   const visibleDeals = deals.filter(
@@ -43,17 +74,41 @@ export function DealTable({ progress = null }: DealTableProps) {
   const fetchDeals = useCallback(async () => {
     try {
       setError(null);
-      const data = await getDeals(sortBy, 0, selectedRegion);
+      const data = await getDeals(sortBy, 0, scope === 'region' ? selectedRegion : null);
       setDeals(data.deals);
       setLastUpdated(data.last_updated);
       setRegionName(data.region_name);
       setIsBrowsed(data.is_browsed);
+      setNearbyMeta(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load deals');
     } finally {
       setLoading(false);
     }
-  }, [sortBy, selectedRegion]);
+  }, [sortBy, selectedRegion, scope]);
+
+  const runNearbyScan = useCallback(async () => {
+    setScanning(true);
+    setError(null);
+    try {
+      const data = await getNearbyDeals(maxJumps, routeFlag, sortBy);
+      setDeals(data.deals);
+      setNearbyMeta({
+        regionsScanned: data.regions_scanned,
+        regionsInRange: data.regions_in_range,
+        maxJumps: data.max_jumps,
+        truncated: data.truncated,
+      });
+      setRegionName(null);
+      setIsBrowsed(false);
+      setLastUpdated(new Date().toISOString());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to scan nearby regions');
+    } finally {
+      setScanning(false);
+      setLoading(false);
+    }
+  }, [maxJumps, routeFlag, sortBy]);
 
   useEffect(() => {
     getRegions()
@@ -63,13 +118,33 @@ export function DealTable({ progress = null }: DealTableProps) {
   }, []);
 
   useEffect(() => {
+    // A nearby scan fetches an order book per region in range, so it only ever
+    // runs when asked for -- never on an interval, and not on scope change.
+    if (scope === 'nearby') {
+      setLoading(false);
+      return;
+    }
     fetchDeals();
-    // Auto-refresh every 60 seconds
     const interval = setInterval(fetchDeals, 60000);
     return () => clearInterval(interval);
-  }, [fetchDeals]);
+  }, [fetchDeals, scope]);
+
+  useEffect(() => {
+    // Results only describe the scan that produced them. Switching into nearby
+    // mode, or changing the range or route after a scan, would otherwise leave
+    // the previous rows on screen looking like the answer to the new question.
+    if (scope !== 'nearby') return;
+    setDeals([]);
+    setNearbyMeta(null);
+    setLastUpdated(null);
+    setError(null);
+  }, [scope, maxJumps, routeFlag]);
 
   const handleRefresh = async () => {
+    if (scope === 'nearby') {
+      await runNearbyScan();
+      return;
+    }
     setRefreshing(true);
     try {
       setError(null);
@@ -107,25 +182,52 @@ export function DealTable({ progress = null }: DealTableProps) {
     <div className="deal-table-container">
       <div className="deal-table-header">
         <h2>
-          Arbitrage Opportunities (
-          {isFiltered ? `${visibleDeals.length} of ${deals.length}` : deals.length})
-          {regionName && <span className="deal-region-tag"> in {regionName}</span>}
+          {scope === 'nearby' && !nearbyMeta ? (
+            <>
+              Arbitrage Opportunities
+              <span className="deal-region-tag"> -- nearby regions not scanned yet</span>
+            </>
+          ) : (
+            <>
+              Arbitrage Opportunities (
+              {isFiltered ? `${visibleDeals.length} of ${deals.length}` : deals.length})
+              {regionName && <span className="deal-region-tag"> in {regionName}</span>}
+              {showsLocation && nearbyMeta && (
+                <span className="deal-region-tag">
+                  {' '}
+                  within {nearbyMeta.maxJumps} jumps
+                </span>
+              )}
+            </>
+          )}
         </h2>
         <div className="deal-controls">
           <select
-            value={selectedRegion ?? ''}
-            onChange={(e) =>
-              setSelectedRegion(e.target.value === '' ? null : Number(e.target.value))
-            }
+            value={scope === 'nearby' ? 'nearby' : (selectedRegion ?? '')}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === 'nearby') {
+                setScope('nearby');
+              } else if (v === '') {
+                setScope('live');
+                setSelectedRegion(null);
+              } else {
+                setScope('region');
+                setSelectedRegion(Number(v));
+              }
+            }}
             className="sort-select region-select"
-            title="Browse another region's market"
+            title="Where to look for bargains"
           >
             <option value="">Where I am (live)</option>
-            {regions.map((r) => (
-              <option key={r.region_id} value={r.region_id}>
-                {r.name}
-              </option>
-            ))}
+            <option value="nearby">Scan nearby regions...</option>
+            <optgroup label="Browse a region">
+              {regions.map((r) => (
+                <option key={r.region_id} value={r.region_id}>
+                  {r.name}
+                </option>
+              ))}
+            </optgroup>
           </select>
           <select
             value={sortBy}
@@ -135,16 +237,72 @@ export function DealTable({ progress = null }: DealTableProps) {
             <option value="discount">Sort by Discount</option>
             <option value="profit">Sort by Profit</option>
             <option value="name">Sort by Name</option>
+            {scope === 'nearby' && <option value="jumps">Sort by Jumps</option>}
           </select>
           <button
             onClick={handleRefresh}
-            disabled={refreshing}
+            disabled={refreshing || scanning}
             className="refresh-btn"
           >
-            {refreshing ? 'Scanning...' : 'Refresh'}
+            {scanning ? 'Scanning...' : refreshing ? 'Scanning...' : 'Refresh'}
           </button>
         </div>
       </div>
+
+      {scope === 'nearby' && (
+        <div className="nearby-controls">
+          <label className="nearby-field">
+            Within
+            <select
+              value={maxJumps}
+              onChange={(e) => setMaxJumps(Number(e.target.value))}
+              className="sort-select"
+            >
+              {JUMP_RANGES.map((j) => (
+                <option key={j} value={j}>
+                  {j} jumps
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="nearby-field">
+            Route
+            <select
+              value={routeFlag}
+              onChange={(e) => setRouteFlag(e.target.value as RouteFlag)}
+              className="sort-select"
+            >
+              {(Object.keys(FLAG_LABELS) as RouteFlag[]).map((f) => (
+                <option key={f} value={f}>
+                  {FLAG_LABELS[f]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            onClick={runNearbyScan}
+            disabled={scanning}
+            className={nearbyMeta ? 'refresh-btn' : 'refresh-btn scan-btn-primary'}
+          >
+            {scanning ? 'Scanning...' : nearbyMeta ? 'Rescan' : 'Scan'}
+          </button>
+          <span className="nearby-hint">
+            Reads an order book per region in range -- run it when you want it,
+            not on a timer.
+          </span>
+        </div>
+      )}
+
+      {nearbyMeta && (
+        <div className={nearbyMeta.truncated ? 'browsing-banner' : 'nearby-summary'}>
+          Scanned {nearbyMeta.regionsScanned} region
+          {nearbyMeta.regionsScanned === 1 ? '' : 's'} within {nearbyMeta.maxJumps}{' '}
+          jumps
+          {nearbyMeta.truncated &&
+            ` -- capped from ${nearbyMeta.regionsInRange} in range, so this isn't the full picture`}
+          .
+        </div>
+      )}
 
       <div className="deal-filters">
         <input
@@ -203,15 +361,24 @@ export function DealTable({ progress = null }: DealTableProps) {
 
       {visibleDeals.length === 0 ? (
         <div className="no-deals">
-          {deals.length === 0 ? (
+          {scope === 'nearby' && !nearbyMeta ? (
             <>
-              No arbitrage opportunities found in {regionName ?? 'this region'}.
-              Try adjusting your filters or wait for the next market scan.
+              Pick a jump range and press Scan to check every region within
+              reach of where you are now.
+            </>
+          ) : deals.length === 0 ? (
+            <>
+              No arbitrage opportunities found
+              {showsLocation
+                ? ` within ${nearbyMeta?.maxJumps ?? maxJumps} jumps`
+                : ` in ${regionName ?? 'this region'}`}
+              . Try adjusting your filters or wait for the next market scan.
             </>
           ) : (
             <>
-              None of the {deals.length} opportunities in{' '}
-              {regionName ?? 'this region'} match that filter.
+              None of the {deals.length} opportunities{' '}
+              {showsLocation ? 'found nearby' : `in ${regionName ?? 'this region'}`}{' '}
+              match that filter.
             </>
           )}
         </div>
@@ -221,18 +388,22 @@ export function DealTable({ progress = null }: DealTableProps) {
             {/* Fixed proportions. With content-driven widths the columns
                 resized on every keystroke in the filter box. */}
             <colgroup>
-              <col style={{ width: '26%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '12%' }} />
+              <col style={{ width: showsLocation ? '21%' : '26%' }} />
+              <col style={{ width: showsLocation ? '12%' : '14%' }} />
+              {showsLocation && <col style={{ width: '14%' }} />}
+              {showsLocation && <col style={{ width: '7%' }} />}
+              <col style={{ width: showsLocation ? '11%' : '13%' }} />
+              <col style={{ width: showsLocation ? '11%' : '13%' }} />
+              <col style={{ width: showsLocation ? '8%' : '10%' }} />
+              <col style={{ width: showsLocation ? '9%' : '12%' }} />
+              <col style={{ width: showsLocation ? '7%' : '12%' }} />
             </colgroup>
             <thead>
               <tr>
                 <th>Item</th>
                 <th>Category</th>
+                {showsLocation && <th>Region</th>}
+                {showsLocation && <th className="num">Jumps</th>}
                 <th className="num">Local</th>
                 <th className="num">Jita</th>
                 <th className="num">Disc</th>
@@ -242,11 +413,22 @@ export function DealTable({ progress = null }: DealTableProps) {
             </thead>
             <tbody>
               {visibleDeals.map((deal) => (
-                <tr key={deal.type_id} className={deal.discount_pct >= 0.2 ? 'high-value-row' : ''}>
+                <tr
+                  key={`${deal.region_id}-${deal.type_id}`}
+                  className={deal.discount_pct >= 0.2 ? 'high-value-row' : ''}
+                >
                   <td className="item-name-cell" title={deal.type_name}>
                     {deal.type_name}
                   </td>
                   <td className="category-cell">{deal.category_name ?? '--'}</td>
+                  {showsLocation && (
+                    <td className="category-cell" title={deal.region_name}>
+                      {deal.region_name}
+                    </td>
+                  )}
+                  {showsLocation && (
+                    <td className="num jumps-cell">{deal.jumps ?? '--'}</td>
+                  )}
                   <td className="num">{formatISK(deal.local_price)}</td>
                   <td className="num muted">{formatISK(deal.jita_price)}</td>
                   <td className="num discount-cell">{formatPercent(deal.discount_pct)}</td>

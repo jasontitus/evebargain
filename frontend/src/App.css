@@ -371,6 +371,60 @@ body {
 
 .link-btn:hover { color: var(--accent-hover); }
 
+/* ===== Nearby Scan ===== */
+
+.nearby-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--eve-amber-dim);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.nearby-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.nearby-hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  flex: 1;
+  min-width: 200px;
+}
+
+.nearby-summary {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.jumps-cell {
+  color: var(--eve-amber);
+  font-weight: 600;
+}
+
+/* Until a scan has run there are no results, so the button is the only thing
+   worth looking at -- make that obvious rather than leaving a dead panel. */
+.scan-btn-primary {
+  background: var(--eve-amber);
+  color: #1a1206;
+  font-weight: 700;
+}
+
+.scan-btn-primary:hover {
+  background: #ffc55e;
+}
+
 /* ===== Deal Filters ===== */
 
 .deal-filters {
