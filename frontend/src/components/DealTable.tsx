@@ -46,32 +46,61 @@ const FLAG_LABELS: Record<RouteFlag, string> = {
   insecure: 'Avoid highsec',
 };
 
+/** The view the table is showing, in a form that survives a window boundary. */
+export interface DealTableView {
+  scope: Scope;
+  regionId: number | null;
+  sortBy: SortField;
+  maxJumps: number;
+  routeFlag: RouteFlag;
+  nameFilter: string;
+  categoryFilter: string;
+}
+
 interface DealTableProps {
   /** Live scan progress pushed over the WebSocket, or null when idle. */
   progress?: FetchProgress | null;
   /** Popout mode: drop the columns that don't earn their width at ~500px. */
   compact?: boolean;
+  /**
+   * Hide every control and render only rows. The popout is a passive pane --
+   * it shows the view it was opened with and nothing you can fiddle with.
+   */
+  chromeless?: boolean;
+  /** The view to open on, carried over from the window that spawned this one. */
+  initialView?: Partial<DealTableView>;
 }
 
-export function DealTable({ progress = null, compact = false }: DealTableProps) {
+export function DealTable({
+  progress = null,
+  compact = false,
+  chromeless = false,
+  initialView,
+}: DealTableProps) {
   const [deals, setDeals] = useState<ArbitrageResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [sortBy, setSortBy] = useState<SortField>('discount');
+  const [sortBy, setSortBy] = useState<SortField>(initialView?.sortBy ?? 'discount');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regions, setRegions] = useState<RegionSummary[]>([]);
   // null means "follow the character" -- the default live behaviour.
-  const [selectedRegion, setSelectedRegion] = useState<number | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<number | null>(
+    initialView?.regionId ?? null
+  );
   const [regionName, setRegionName] = useState<string | null>(null);
   const [isBrowsed, setIsBrowsed] = useState(false);
-  const [scope, setScope] = useState<Scope>('live');
-  const [maxJumps, setMaxJumps] = useState(10);
-  const [routeFlag, setRouteFlag] = useState<RouteFlag>('shortest');
+  const [scope, setScope] = useState<Scope>(initialView?.scope ?? 'live');
+  const [maxJumps, setMaxJumps] = useState(initialView?.maxJumps ?? 10);
+  const [routeFlag, setRouteFlag] = useState<RouteFlag>(
+    initialView?.routeFlag ?? 'shortest'
+  );
   const [nearbyMeta, setNearbyMeta] = useState<NearbyMeta | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [nameFilter, setNameFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [nameFilter, setNameFilter] = useState(initialView?.nameFilter ?? '');
+  const [categoryFilter, setCategoryFilter] = useState(
+    initialView?.categoryFilter ?? ''
+  );
 
   // Categories actually present in the current results -- offering one that
   // matches nothing here would just be a dead option.
@@ -162,6 +191,36 @@ export function DealTable({ progress = null, compact = false }: DealTableProps) 
     setError(null);
   }, [scope, maxJumps, routeFlag]);
 
+  useEffect(() => {
+    // The popout has no Scan button, so a nearby view has to run itself once
+    // on open or it would sit empty with no way to populate it.
+    if (chromeless && scope === 'nearby') {
+      runNearbyScan();
+    }
+    // Mount only: this is the handoff from the window that opened it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Carry the exact current view across the window boundary. */
+  const openPopout = () => {
+    const params = new URLSearchParams({ scope, sort: sortBy });
+    if (scope === 'region' && selectedRegion != null) {
+      params.set('region', String(selectedRegion));
+    }
+    if (scope === 'nearby') {
+      params.set('jumps', String(maxJumps));
+      params.set('flag', routeFlag);
+    }
+    if (nameFilter.trim()) params.set('name', nameFilter.trim());
+    if (categoryFilter) params.set('cat', categoryFilter);
+
+    window.open(
+      `/watch?${params}`,
+      `evebargain-watch-${params}`,
+      'width=560,height=720,resizable=yes,scrollbars=yes'
+    );
+  };
+
   const handleRefresh = async () => {
     if (scope === 'nearby') {
       await runNearbyScan();
@@ -201,7 +260,8 @@ export function DealTable({ progress = null, compact = false }: DealTableProps) 
   }
 
   return (
-    <div className="deal-table-container">
+    <div className={chromeless ? 'deal-table-container chromeless' : 'deal-table-container'}>
+      {!chromeless && (
       <div className="deal-table-header">
         <h2>
           {scope === 'nearby' && !nearbyMeta ? (
@@ -268,10 +328,18 @@ export function DealTable({ progress = null, compact = false }: DealTableProps) 
           >
             {scanning ? 'Scanning...' : refreshing ? 'Scanning...' : 'Refresh'}
           </button>
+          <button
+            onClick={openPopout}
+            className="popout-btn"
+            title="Open this exact view in a small data-only window"
+          >
+            Popout ↗
+          </button>
         </div>
       </div>
+      )}
 
-      {scope === 'nearby' && (
+      {!chromeless && scope === 'nearby' && (
         <div className="nearby-controls">
           <label className="nearby-field">
             Within
@@ -315,7 +383,7 @@ export function DealTable({ progress = null, compact = false }: DealTableProps) 
         </div>
       )}
 
-      {nearbyMeta && (
+      {!chromeless && nearbyMeta && (
         <div className={nearbyMeta.truncated ? 'browsing-banner' : 'nearby-summary'}>
           Scanned {nearbyMeta.regionsScanned} region
           {nearbyMeta.regionsScanned === 1 ? '' : 's'} within {nearbyMeta.maxJumps}{' '}
@@ -326,6 +394,7 @@ export function DealTable({ progress = null, compact = false }: DealTableProps) 
         </div>
       )}
 
+      {!chromeless && (
       <div className="deal-filters">
         <input
           type="search"
@@ -360,10 +429,11 @@ export function DealTable({ progress = null, compact = false }: DealTableProps) 
           </button>
         )}
       </div>
+      )}
 
       {progress && <FetchProgressBar progress={progress} />}
 
-      {isBrowsed && (
+      {!chromeless && isBrowsed && (
         <div className="browsing-banner">
           Browsing {regionName} -- you aren't there. Alerts still fire for
           wherever your character actually is.{' '}
@@ -373,7 +443,7 @@ export function DealTable({ progress = null, compact = false }: DealTableProps) 
         </div>
       )}
 
-      {lastUpdated && (
+      {!chromeless && lastUpdated && (
         <p className="last-updated">
           Last updated: {new Date(lastUpdated).toLocaleTimeString()}
         </p>

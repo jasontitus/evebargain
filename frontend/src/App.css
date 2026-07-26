@@ -508,6 +508,23 @@ body {
   margin-left: auto;
 }
 
+/* The popout has no filter controls, so the bar has to say what's being
+   filtered -- otherwise a short list looks like a quiet market. */
+.watch-filter {
+  background: var(--bg-card);
+  border-radius: 3px;
+  color: var(--eve-amber);
+  font-size: 0.75rem;
+  padding: 2px 7px;
+}
+
+/* Chromeless: no header, filters or banners, so the padding around them goes
+   too and the rows start at the top edge. */
+.deal-table-container.chromeless {
+  min-height: 0;
+  padding: 0;
+}
+
 .watch-signin {
   color: var(--text-secondary);
   font-size: 0.9rem;

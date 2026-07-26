@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNotifications } from '../hooks/useNotifications';
 import { DealTable } from './DealTable';
+import type { DealTableView } from './DealTable';
 import { formatPercent, formatISKCompact } from '../utils/format';
 
 /**
@@ -12,8 +13,29 @@ import { formatPercent, formatISKCompact } from '../utils/format';
  * more than it gives. The table keeps its own 60s refresh, so this updates
  * passively without being touched.
  */
+/** Read the view the opening window handed over in the query string. */
+function viewFromUrl(): Partial<DealTableView> {
+  const p = new URLSearchParams(window.location.search);
+  const scope = p.get('scope');
+  const flag = p.get('flag');
+  return {
+    scope: scope === 'region' || scope === 'nearby' ? scope : 'live',
+    regionId: p.get('region') ? Number(p.get('region')) : null,
+    sortBy: (p.get('sort') as DealTableView['sortBy']) ?? 'discount',
+    maxJumps: p.get('jumps') ? Number(p.get('jumps')) : 10,
+    routeFlag:
+      flag === 'secure' || flag === 'insecure' || flag === 'shortest'
+        ? flag
+        : 'shortest',
+    nameFilter: p.get('name') ?? '',
+    categoryFilter: p.get('cat') ?? '',
+  };
+}
+
 export function WatchWindow() {
   const { user, loading, fetchUser } = useAuth();
+  // Read once. The popout is a snapshot of the view it was opened with.
+  const [view] = useState(viewFromUrl);
   const { notify } = useNotifications();
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const [regionName, setRegionName] = useState<string | null>(null);
@@ -83,10 +105,15 @@ export function WatchWindow() {
     <div className="watch-window">
       <div className="watch-bar">
         <span className={isConnected ? 'watch-dot live' : 'watch-dot'} />
-        <strong>{regionName ?? 'Locating...'}</strong>
+        <strong>{view.scope === 'nearby' ? `Within ${view.maxJumps} jumps` : regionName ?? 'Locating...'}</strong>
+        {(view.nameFilter || view.categoryFilter) && (
+          <span className="watch-filter">
+            {[view.categoryFilter, view.nameFilter].filter(Boolean).join(' · ')}
+          </span>
+        )}
         <span className="watch-char">{user.character_name}</span>
       </div>
-      <DealTable progress={progress} compact />
+      <DealTable progress={progress} compact chromeless initialView={view} />
     </div>
   );
 }
