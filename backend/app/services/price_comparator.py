@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,11 @@ from app.services.location import get_region_name
 from app.utils.eve_constants import THE_FORGE_REGION_ID, TRACKABLE_CATEGORIES
 
 logger = logging.getLogger(__name__)
+
+# How long a given item in a given region stays "already alerted". Long enough
+# to survive many scan cycles, short enough that a deal still sitting there
+# tomorrow is worth mentioning again.
+ALERT_COOLDOWN = timedelta(hours=6)
 
 
 async def find_arbitrage(
@@ -130,14 +135,56 @@ async def find_arbitrage(
     return deals
 
 
+def deals_worth_alerting(
+    deals: list[ArbitrageResult], user_config: UserConfig
+) -> list[ArbitrageResult]:
+    """Narrow browse results down to the ones worth interrupting someone for.
+
+    The table's filters answer "what could I look at?"; these answer "what
+    should make a noise?". Sharing one threshold for both forced the dashboard
+    to be as quiet as the alerts, or the alerts as noisy as the dashboard.
+    """
+    return [
+        d
+        for d in deals
+        if d.discount_pct >= user_config.alert_discount_threshold
+        and d.profit_per_unit >= user_config.alert_min_profit_isk
+        and d.volume_available >= user_config.alert_min_volume
+    ]
+
+
 async def create_alerts_from_deals(
     db: AsyncSession,
     user_id: int,
     deals: list[ArbitrageResult],
 ) -> list[Alert]:
-    """Save new arbitrage deals as alerts in the database."""
+    """Save arbitrage deals as alerts, skipping ones already raised recently.
+
+    Returns only the newly created alerts, so callers notify once per find
+    rather than on every scan.
+
+    Market data barely moves between scans, so without this the same deal was
+    re-inserted and re-pushed every cycle -- with the scan on a 300s timer and
+    a 20-alert ceiling, a busy region meant 20 notifications every 5 minutes,
+    forever, for items already seen.
+    """
+    if not deals:
+        return []
+
+    cutoff = datetime.utcnow() - ALERT_COOLDOWN
+    recent = await db.execute(
+        select(Alert.type_id, Alert.region_id).where(
+            Alert.user_id == user_id,
+            Alert.created_at >= cutoff,
+        )
+    )
+    already_raised = set(recent.all())
+
     alerts = []
     for deal in deals:
+        if (deal.type_id, deal.region_id) in already_raised:
+            continue
+
         alert = Alert(
             user_id=user_id,
             type_id=deal.type_id,
@@ -151,6 +198,8 @@ async def create_alerts_from_deals(
         )
         db.add(alert)
         alerts.append(alert)
+        # Guards against duplicates inside this batch too.
+        already_raised.add((deal.type_id, deal.region_id))
 
     await db.commit()
     return alerts

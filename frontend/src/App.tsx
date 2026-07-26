@@ -5,14 +5,26 @@ import { LoginButton } from './components/LoginButton';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { ConfigPanel } from './components/ConfigPanel';
+import { WatchWindow } from './components/WatchWindow';
 import './App.css';
 
 function AppContent() {
   const { user, loading, fetchUser } = useAuth();
+  // The popout is deliberately outside Layout -- nav and padding cost more
+  // than they give in a 500px window, and it manages its own auth state.
+  const isWatch = window.location.pathname === '/watch';
 
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
+
+  if (isWatch) {
+    return (
+      <Routes>
+        <Route path="/watch" element={<WatchWindow />} />
+      </Routes>
+    );
+  }
 
   if (loading) {
     return (

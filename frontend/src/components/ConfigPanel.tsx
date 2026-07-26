@@ -177,6 +177,72 @@ export function ConfigPanel() {
       </section>
 
       <section className="config-section">
+        <h3>Alert Threshold</h3>
+        <p className="config-help">
+          A separate, usually stricter bar for what actually notifies you.
+          The settings above decide what fills the table; these decide what is
+          worth interrupting you for. Alerts only fire for the region you are
+          actually in, and the same item won't alert twice within 6 hours.
+        </p>
+        <div className="slider-container">
+          <input
+            type="range"
+            min="1"
+            max="90"
+            value={config.alert_discount_threshold * 100}
+            onChange={(e) =>
+              applyChange({ alert_discount_threshold: parseInt(e.target.value) / 100 })
+            }
+            className="threshold-slider"
+          />
+          <span className="slider-value">
+            {formatPercent(config.alert_discount_threshold)}
+          </span>
+        </div>
+
+        <div className="config-subfield">
+          <label>
+            Min profit per unit
+            <input
+              type="number"
+              value={config.alert_min_profit_isk}
+              onChange={(e) =>
+                applyChange({ alert_min_profit_isk: parseFloat(e.target.value) || 0 })
+              }
+              className="number-input"
+              min="0"
+              step="100000"
+            />
+          </label>
+          <span className="input-hint">
+            {formatISKCompact(config.alert_min_profit_isk)}
+          </span>
+        </div>
+
+        <div className="config-subfield">
+          <label>
+            Min volume
+            <input
+              type="number"
+              value={config.alert_min_volume}
+              onChange={(e) =>
+                applyChange({ alert_min_volume: parseInt(e.target.value) || 1 })
+              }
+              className="number-input"
+              min="1"
+            />
+          </label>
+        </div>
+
+        {config.alert_discount_threshold < config.discount_threshold && (
+          <p className="config-warning">
+            This is looser than the table filter above, so every row shown will
+            also alert. Raise it to make alerts more selective than browsing.
+          </p>
+        )}
+      </section>
+
+      <section className="config-section">
         <h3>Notifications</h3>
         <div className="toggle-group">
           <label className="toggle-label">

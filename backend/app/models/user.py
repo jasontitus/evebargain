@@ -38,6 +38,13 @@ class UserConfig(Base):
     )  # JSON array
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sound_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Interrupting you is a higher bar than filling a table. These default
+    # stricter than the browse filters above, so the dashboard can show
+    # everything worth a look while only the genuinely good deals chime.
+    alert_discount_threshold: Mapped[float] = mapped_column(Float, default=0.25)
+    alert_min_profit_isk: Mapped[float] = mapped_column(Float, default=1000000.0)
+    alert_min_volume: Mapped[int] = mapped_column(Integer, default=5)
     min_volume: Mapped[int] = mapped_column(Integer, default=5)
     # 1M ISK/unit excluded almost everything except ships and faction modules,
     # which is where routine ammo and module arbitrage lives.

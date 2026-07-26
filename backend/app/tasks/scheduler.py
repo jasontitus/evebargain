@@ -13,7 +13,11 @@ from app.database import async_session
 from app.models.user import User, UserConfig
 from app.services import sso, location
 from app.services.market_fetcher import update_market_cache, get_tracked_type_ids, update_jita_cache
-from app.services.price_comparator import find_arbitrage, create_alerts_from_deals
+from app.services.price_comparator import (
+    find_arbitrage,
+    create_alerts_from_deals,
+    deals_worth_alerting,
+)
 from app.services.notification import ws_manager
 from app.utils.eve_constants import THE_FORGE_REGION_ID
 
@@ -112,21 +116,27 @@ async def scan_market_for_user(
             # Find arbitrage opportunities
             deals = await find_arbitrage(db, target_region, user_config)
 
-            if deals:
-                # Save alerts to database
-                alerts = await create_alerts_from_deals(db, user_id, deals)
+            # The table shows everything past the browse filters; only the
+            # stricter alert bar is allowed to make a noise.
+            alertable = deals_worth_alerting(deals, user_config)
+            # create_alerts_from_deals drops anything already raised inside the
+            # cooldown, so this is genuinely new finds only.
+            new_alerts = await create_alerts_from_deals(db, user_id, alertable)
 
-                # Push notifications via WebSocket
-                for deal in deals[:20]:  # Limit to top 20 alerts
+            by_type = {(a.type_id, a.region_id) for a in new_alerts}
+            for deal in deals:
+                if (deal.type_id, deal.region_id) in by_type:
                     await ws_manager.send_alert(user_id, deal.model_dump())
 
+            if deals:
                 await ws_manager.send_market_update(
                     user_id, target_region, len(deals)
                 )
 
             logger.info(
-                f"Market scan complete for user {user_id}: "
-                f"{len(deals)} deals found"
+                f"Market scan complete for user {user_id}: {len(deals)} deals, "
+                f"{len(alertable)} past the alert bar, "
+                f"{len(new_alerts)} newly notified"
             )
 
         except Exception as e:

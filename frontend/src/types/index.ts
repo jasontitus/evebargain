@@ -13,6 +13,10 @@ export interface UserConfig {
   sound_enabled: boolean;
   min_volume: number;
   min_profit_isk: number;
+  /** Stricter bar for what actually notifies, separate from the table filters. */
+  alert_discount_threshold: number;
+  alert_min_profit_isk: number;
+  alert_min_volume: number;
 }
 
 export interface UserConfigUpdate {
@@ -22,6 +26,9 @@ export interface UserConfigUpdate {
   sound_enabled?: boolean;
   min_volume?: number;
   min_profit_isk?: number;
+  alert_discount_threshold?: number;
+  alert_min_profit_isk?: number;
+  alert_min_volume?: number;
 }
 
 export interface CategoryInfo {

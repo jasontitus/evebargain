@@ -39,6 +39,9 @@ async def get_config(
         sound_enabled=config.sound_enabled,
         min_volume=config.min_volume,
         min_profit_isk=config.min_profit_isk,
+        alert_discount_threshold=config.alert_discount_threshold,
+        alert_min_profit_isk=config.alert_min_profit_isk,
+        alert_min_volume=config.alert_min_volume,
     )
 
 
@@ -76,6 +79,12 @@ async def update_config(
         config.min_volume = update.min_volume
     if update.min_profit_isk is not None:
         config.min_profit_isk = update.min_profit_isk
+    if update.alert_discount_threshold is not None:
+        config.alert_discount_threshold = update.alert_discount_threshold
+    if update.alert_min_profit_isk is not None:
+        config.alert_min_profit_isk = update.alert_min_profit_isk
+    if update.alert_min_volume is not None:
+        config.alert_min_volume = update.alert_min_volume
 
     await db.commit()
 
@@ -86,6 +95,9 @@ async def update_config(
         sound_enabled=config.sound_enabled,
         min_volume=config.min_volume,
         min_profit_isk=config.min_profit_isk,
+        alert_discount_threshold=config.alert_discount_threshold,
+        alert_min_profit_isk=config.alert_min_profit_isk,
+        alert_min_volume=config.alert_min_volume,
     )
 
 

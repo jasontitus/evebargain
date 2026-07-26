@@ -49,9 +49,11 @@ const FLAG_LABELS: Record<RouteFlag, string> = {
 interface DealTableProps {
   /** Live scan progress pushed over the WebSocket, or null when idle. */
   progress?: FetchProgress | null;
+  /** Popout mode: drop the columns that don't earn their width at ~500px. */
+  compact?: boolean;
 }
 
-export function DealTable({ progress = null }: DealTableProps) {
+export function DealTable({ progress = null, compact = false }: DealTableProps) {
   const [deals, setDeals] = useState<ArbitrageResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -79,6 +81,9 @@ export function DealTable({ progress = null }: DealTableProps) {
 
   // Nearby results span regions, so where a deal is becomes worth a column.
   const showsLocation = scope === 'nearby';
+  // Jita price and volume are reference detail, not the decision -- the first
+  // things to go when the window is only a few hundred pixels wide.
+  const showsDetail = !compact;
 
   const needle = nameFilter.trim().toLowerCase();
   const visibleDeals = deals.filter(
@@ -417,10 +422,10 @@ export function DealTable({ progress = null }: DealTableProps) {
               {showsLocation && <col style={{ width: '132px' }} />}
               {showsLocation && <col style={{ width: '68px' }} />}
               <col style={{ width: '96px' }} />
-              <col style={{ width: '96px' }} />
+              {showsDetail && <col style={{ width: '96px' }} />}
               <col style={{ width: '92px' }} />
               <col style={{ width: '104px' }} />
-              <col style={{ width: '96px' }} />
+              {showsDetail && <col style={{ width: '96px' }} />}
               <col />
             </colgroup>
             <thead>
@@ -432,10 +437,10 @@ export function DealTable({ progress = null }: DealTableProps) {
                 {showsLocation && <th>Region</th>}
                 {showsLocation && <th className="num">Jumps</th>}
                 <th className="num">Local</th>
-                <th className="num">Jita</th>
+                {showsDetail && <th className="num">Jita</th>}
                 <th className="num">Disc</th>
                 <th className="num">Profit/u</th>
-                <th className="num">Volume</th>
+                {showsDetail && <th className="num">Volume</th>}
                 <th className="spacer-col" aria-hidden="true" />
               </tr>
             </thead>
@@ -468,9 +473,11 @@ export function DealTable({ progress = null }: DealTableProps) {
                   <td className="num" title={formatISK(deal.local_price)}>
                     {formatISKShort(deal.local_price)}
                   </td>
-                  <td className="num muted" title={formatISK(deal.jita_price)}>
-                    {formatISKShort(deal.jita_price)}
-                  </td>
+                  {showsDetail && (
+                    <td className="num muted" title={formatISK(deal.jita_price)}>
+                      {formatISKShort(deal.jita_price)}
+                    </td>
+                  )}
                   <td className="num discount-cell">{formatPercent(deal.discount_pct)}</td>
                   <td
                     className="num profit-cell"
@@ -478,7 +485,11 @@ export function DealTable({ progress = null }: DealTableProps) {
                   >
                     {formatISKShort(deal.profit_per_unit)}
                   </td>
-                  <td className="num muted">{deal.volume_available.toLocaleString()}</td>
+                  {showsDetail && (
+                    <td className="num muted">
+                      {deal.volume_available.toLocaleString()}
+                    </td>
+                  )}
                   <td className="spacer-col" aria-hidden="true" />
                 </tr>
               ))}

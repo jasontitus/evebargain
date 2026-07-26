@@ -115,7 +115,22 @@ export function Dashboard() {
         isConnected={isConnected}
       />
 
-      <CategoryPicker onConfigChange={handleCategoryChange} />
+      <div className="dashboard-actions">
+        <CategoryPicker onConfigChange={handleCategoryChange} />
+        <button
+          className="popout-btn"
+          onClick={() =>
+            window.open(
+              '/watch',
+              'evebargain-watch',
+              'width=560,height=720,resizable=yes,scrollbars=yes'
+            )
+          }
+          title="Open the deal table in a small always-on-top-able window"
+        >
+          Popout ↗
+        </button>
+      </div>
 
       {'Notification' in window && Notification.permission === 'default' && (
         <button onClick={handleEnableNotifications} className="enable-notifications-btn">

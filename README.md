@@ -26,6 +26,8 @@ This is built for the player who's already traveling. You're not going out of yo
 - **Real-time location tracking** via EVE ESI API
 - **Automated price comparison** against Jita (The Forge) on region change
 - **Configurable alerts** -- set discount threshold (5-50%), minimum profit, minimum volume
+- **Separate alert threshold** -- browse everything worth a look, but only chime for the genuinely good ones; the same item won't alert twice within 6 hours
+- **Popout watch window** -- the deal table alone in a small resizable window for a second monitor, auto-refreshing every 60s
 - **Category filtering** -- Ships, Ammunition, Modules, Drones, SKINs, Materials, Blueprints, Implants, Planetary
 - **Live WebSocket notifications** -- instant alerts pushed to your browser
 - **Desktop notifications + sound** -- don't miss a deal even on a second monitor
@@ -250,6 +252,31 @@ but region changes won't be picked up.
 3. Fetch/use cached Jita sell orders
 4. Compare lowest prices, filter by user preferences
 5. Push matching deals via WebSocket to the browser
+
+## Alerts vs. Browsing
+
+Two separate bars, because "what could I look at?" and "what should interrupt
+me?" are different questions. `discount_threshold` / `min_profit_isk` /
+`min_volume` decide what fills the table; `alert_discount_threshold` /
+`alert_min_profit_isk` / `alert_min_volume` decide what raises a notification,
+and default stricter (25%, 1M ISK/unit, volume 5).
+
+Alerts fire only for the region your character is actually in. The nearby scan
+is a manual "go look" tool and deliberately never notifies -- alerting across a
+jump radius would mean background-scanning every region in range on a timer.
+
+The same item in the same region will not alert twice within `ALERT_COOLDOWN`
+(6 hours). Market data barely moves between scans, so without that the 300s
+scan re-raised every standing deal every cycle -- a busy region meant a
+notification burst every five minutes, forever, for items already seen.
+
+## Popout Watch Window
+
+The **Popout** button on the dashboard opens `/watch`: the deal table alone,
+no nav or alert feed, in a small resizable window for a second monitor. It
+keeps the 60-second auto-refresh and still raises notifications, so it can be
+the only window you leave open. Jita price and volume columns are dropped at
+that width; the discount, profit and local price stay.
 
 ## Being a Good ESI Citizen
 
