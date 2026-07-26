@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { Alert, UserConfig, WSMessage } from '../types';
+import type { Alert, WSMessage } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNotifications } from '../hooks/useNotifications';

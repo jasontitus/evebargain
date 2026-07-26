@@ -2,7 +2,9 @@ import { api } from './client';
 import type { UserInfo } from '../types';
 
 export async function getCurrentUser(): Promise<UserInfo> {
-  return api.get<UserInfo>('/auth/me');
+  // Runs on every page load before the user has logged in, so a 401 here must
+  // fall through to the login screen rather than redirect.
+  return api.get<UserInfo>('/auth/me', { allowUnauthenticated: true });
 }
 
 export function getLoginUrl(): string {

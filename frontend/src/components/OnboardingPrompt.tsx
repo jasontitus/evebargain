@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { UserConfig, CategoryInfo } from '../types';
-import { getConfig, updateConfig, getCategories } from '../api/config';
+import type { CategoryInfo } from '../types';
+import { updateConfig, getCategories } from '../api/config';
 
 interface OnboardingPromptProps {
   onComplete: () => void;
