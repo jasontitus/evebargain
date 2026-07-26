@@ -408,16 +408,20 @@ export function DealTable({ progress = null }: DealTableProps) {
                 remainder. Percentages meant the numeric columns shrank as
                 columns were added, and the discount -- the whole point of the
                 table -- was the first thing to get clipped. */}
+            {/* Every data column is pinned, and a trailing spacer soaks up
+                whatever is left over. Letting Item take the remainder made it
+                balloon on a wide window while the numbers stayed cramped. */}
             <colgroup>
-              <col />
-              <col style={{ width: '42px' }} />
-              {showsLocation && <col style={{ width: '116px' }} />}
-              {showsLocation && <col style={{ width: '62px' }} />}
-              <col style={{ width: '84px' }} />
-              <col style={{ width: '84px' }} />
-              <col style={{ width: '72px' }} />
+              <col style={{ width: '300px' }} />
+              <col style={{ width: '44px' }} />
+              {showsLocation && <col style={{ width: '132px' }} />}
+              {showsLocation && <col style={{ width: '68px' }} />}
+              <col style={{ width: '96px' }} />
+              <col style={{ width: '96px' }} />
               <col style={{ width: '92px' }} />
-              <col style={{ width: '84px' }} />
+              <col style={{ width: '104px' }} />
+              <col style={{ width: '96px' }} />
+              <col />
             </colgroup>
             <thead>
               <tr>
@@ -432,6 +436,7 @@ export function DealTable({ progress = null }: DealTableProps) {
                 <th className="num">Disc</th>
                 <th className="num">Profit/u</th>
                 <th className="num">Volume</th>
+                <th className="spacer-col" aria-hidden="true" />
               </tr>
             </thead>
             <tbody>
@@ -474,6 +479,7 @@ export function DealTable({ progress = null }: DealTableProps) {
                     {formatISKShort(deal.profit_per_unit)}
                   </td>
                   <td className="num muted">{deal.volume_available.toLocaleString()}</td>
+                  <td className="spacer-col" aria-hidden="true" />
                 </tr>
               ))}
             </tbody>

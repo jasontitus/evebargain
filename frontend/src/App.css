@@ -587,12 +587,18 @@ body {
 /* Nearby results carry two extra columns; give them room before the scroll
    container has to kick in. */
 .deal-table-wide {
-  min-width: 880px;
+  min-width: 1030px;
+}
+
+/* Absorbs leftover width so the data columns stay tight and left-packed
+   instead of the Item column stretching to fill an ultrawide window. */
+.spacer-col {
+  padding: 0;
 }
 
 .deal-table {
   width: 100%;
-  min-width: 640px;
+  min-width: 840px;
   border-collapse: collapse;
   font-size: 0.88rem;
   /* Widths come from <colgroup>, not content. Content-driven columns made
