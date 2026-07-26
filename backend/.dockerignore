@@ -1,0 +1,21 @@
+# Local virtualenvs -- hundreds of MB of build context, and the wrong
+# platform's binaries if they did land in the image.
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local database files. The image must not ship a developer's database, and
+# under Docker the real one lives on the db-data volume.
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets: COPY . . would otherwise bake credentials into an image layer.
+.env
+*.env.local

@@ -1,0 +1,13 @@
+# Installed by npm ci inside the builder; copying the host's copy risks
+# shipping the wrong platform's binaries and bloats the build context.
+node_modules/
+
+# Rebuilt by the builder stage.
+dist/
+build/
+
+# Secrets
+.env
+*.env.local
+
+*.log

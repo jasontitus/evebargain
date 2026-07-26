@@ -4,9 +4,29 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      # Optional so the stack still comes up without one -- the backend logs a
+      # warning when the EVE credentials are missing.
+      - path: .env
+        required: false
+    environment:
+      # Set here rather than in .env because both are properties of this
+      # stack, not of the developer's machine, and compose must win over a
+      # .env written for the local dev setup.
+
+      # The db-data volume is the only path that survives a rebuild. A
+      # relative URL would put the database in the container's writable layer
+      # and lose it on every `docker compose up --build`.
+      DATABASE_URL: sqlite+aiosqlite:////app/data/evebargain.db
+      # Where the browser reaches the UI here -- nginx on 3000, not Vite.
+      FRONTEND_URL: http://localhost:3000
     volumes:
       - db-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   frontend:
@@ -14,7 +34,10 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        # nginx resolves the backend upstream at startup, so wait for it to be
+        # serving rather than merely created.
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

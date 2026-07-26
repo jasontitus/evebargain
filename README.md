@@ -120,6 +120,23 @@ docker compose up --build
 - Frontend (open this one): `http://localhost:3000`
 - Backend API: `http://localhost:8000`
 
+The same EVE application works for both setups: keep the callback registered as
+`http://localhost:8000/api/auth/callback`, since compose publishes the backend
+on 8000 too.
+
+Compose sets `DATABASE_URL` and `FRONTEND_URL` itself, overriding `.env` --
+they describe this stack (database on the `db-data` volume, UI on port 3000)
+rather than your machine. Everything else, including your EVE credentials, is
+read from `.env`, which is optional here: without it the stack still starts and
+the backend logs a warning that login will fail.
+
+The database lives on the `db-data` volume and survives `--build`. To start
+over from an empty database:
+
+```bash
+docker compose down -v
+```
+
 ## Troubleshooting
 
 **`{"detail":"Not Found"}` in the browser**
