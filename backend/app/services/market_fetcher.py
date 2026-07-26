@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
+from app.config import settings
 from app.models.market import MarketCache
 from app.models.item import ItemType
 from app.services.esi_client import esi_client
@@ -51,13 +52,41 @@ async def fetch_region_sell_orders(region_id: int) -> dict[int, dict]:
     return aggregated
 
 
+async def is_cache_fresh(db: AsyncSession, region_id: int, ttl: int | None = None) -> bool:
+    """True if this region was fetched recently enough to skip a refetch."""
+    ttl = settings.market_cache_ttl if ttl is None else ttl
+    result = await db.execute(
+        select(func.max(MarketCache.fetched_at)).where(
+            MarketCache.region_id == region_id
+        )
+    )
+    last = result.scalar()
+    if last is None:
+        return False
+    return (datetime.utcnow() - last).total_seconds() < ttl
+
+
 async def update_market_cache(
-    db: AsyncSession, region_id: int, type_filter: set[int] | None = None
+    db: AsyncSession,
+    region_id: int,
+    type_filter: set[int] | None = None,
+    force: bool = False,
 ):
     """Fetch market data for a region and update the cache.
 
     If type_filter is provided, only cache entries for those type IDs.
+
+    Skips the fetch entirely when the cached rows are still inside ESI's own
+    cache window -- refetching then costs ~275 requests to receive identical
+    data. Pass force=True for an explicit user-triggered refresh.
     """
+    if not force and await is_cache_fresh(db, region_id):
+        logger.info(
+            f"Region {region_id}: cache still fresh "
+            f"(<{settings.market_cache_ttl}s), skipping ESI fetch"
+        )
+        return
+
     aggregated = await fetch_region_sell_orders(region_id)
     now = datetime.utcnow()
 
@@ -108,6 +137,10 @@ async def get_tracked_type_ids(db: AsyncSession, category_ids: list[int]) -> set
     return set(result.scalars().all())
 
 
-async def update_jita_cache(db: AsyncSession, type_ids: set[int] | None = None):
+async def update_jita_cache(
+    db: AsyncSession, type_ids: set[int] | None = None, force: bool = False
+):
     """Update market cache specifically for The Forge (Jita) region."""
-    await update_market_cache(db, THE_FORGE_REGION_ID, type_filter=type_ids)
+    await update_market_cache(
+        db, THE_FORGE_REGION_ID, type_filter=type_ids, force=force
+    )

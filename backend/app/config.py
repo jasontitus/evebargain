@@ -39,6 +39,28 @@ class Settings(BaseSettings):
     # ESI Base URL
     esi_base_url: str = "https://esi.evetech.net/latest"
 
+    # CCP asks every third-party app to identify itself and provide a way to be
+    # contacted, so they can reach out about a misbehaving client instead of
+    # just blocking it. Set ESI_CONTACT in .env to an email or Discord handle.
+    esi_contact: str = ""
+    esi_app_name: str = "EVEBargain/1.0 (+https://github.com/jasontitus/evebargain)"
+
+    # Max in-flight ESI requests. Region order pages are fetched concurrently,
+    # and a full Jita pull is ~275 pages, so this is what stops the app opening
+    # hundreds of sockets against ESI at once.
+    esi_max_concurrency: int = 10
+
+    # ESI caches market order pages for ~300s and returns the same bytes until
+    # then, so re-fetching sooner burns requests for no new data. Refuse to
+    # refetch a region whose cached rows are younger than this.
+    market_cache_ttl: int = 300
+
+    @property
+    def esi_user_agent(self) -> str:
+        if self.esi_contact:
+            return f"{self.esi_app_name} {self.esi_contact}"
+        return self.esi_app_name
+
     # .env lives at the repo root, but uvicorn is launched from backend/, so a
     # relative path would resolve against the wrong directory and silently load
     # nothing. Resolve both locations absolutely; the later file wins, letting a

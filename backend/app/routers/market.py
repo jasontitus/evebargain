@@ -93,5 +93,5 @@ async def refresh_market(
             status_code=400, detail="Location not yet detected"
         )
 
-    await scan_market_for_user(user.id, user.current_region_id)
+    await scan_market_for_user(user.id, user.current_region_id, force=True)
     return {"message": "Market refresh triggered", "region_id": user.current_region_id}
