@@ -505,6 +505,11 @@ body {
 
 .watch-char {
   color: var(--text-muted);
+}
+
+.watch-updated {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
   margin-left: auto;
 }
 

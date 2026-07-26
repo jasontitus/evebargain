@@ -39,6 +39,8 @@ export function WatchWindow() {
   const { notify } = useNotifications();
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const [regionName, setRegionName] = useState<string | null>(null);
+  // With no controls on screen, this is the only signal that the pane is alive.
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const progressTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -111,9 +113,20 @@ export function WatchWindow() {
             {[view.categoryFilter, view.nameFilter].filter(Boolean).join(' · ')}
           </span>
         )}
+        {updatedAt && (
+          <span className="watch-updated">
+            {new Date(updatedAt).toLocaleTimeString()}
+          </span>
+        )}
         <span className="watch-char">{user.character_name}</span>
       </div>
-      <DealTable progress={progress} compact chromeless initialView={view} />
+      <DealTable
+        progress={progress}
+        compact
+        chromeless
+        initialView={view}
+        onUpdated={setUpdatedAt}
+      />
     </div>
   );
 }

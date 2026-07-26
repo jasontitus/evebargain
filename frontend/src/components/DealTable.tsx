@@ -23,6 +23,15 @@ interface NearbyMeta {
 
 const JUMP_RANGES = [5, 10, 15, 20];
 
+/** Single-region views are cheap to refetch -- it's a database read. */
+const LIVE_REFRESH_MS = 60_000;
+/**
+ * Nearby sweeps are only auto-refreshed in the popout, and on a slower beat
+ * matched to ESI's ~300s market cache: rescanning faster than that would
+ * re-request pages that cannot have changed.
+ */
+const NEARBY_REFRESH_MS = 300_000;
+
 /**
  * A glyph per category, so the column costs one character instead of
  * "Materials & Components". The full name stays in the title tooltip and in
@@ -69,6 +78,8 @@ interface DealTableProps {
   chromeless?: boolean;
   /** The view to open on, carried over from the window that spawned this one. */
   initialView?: Partial<DealTableView>;
+  /** Reports when data last landed, so a chromeless host can show freshness. */
+  onUpdated?: (isoTimestamp: string | null) => void;
 }
 
 export function DealTable({
@@ -76,6 +87,7 @@ export function DealTable({
   compact = false,
   chromeless = false,
   initialView,
+  onUpdated,
 }: DealTableProps) {
   const [deals, setDeals] = useState<ArbitrageResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,12 +143,13 @@ export function DealTable({
       setRegionName(data.region_name);
       setIsBrowsed(data.is_browsed);
       setNearbyMeta(null);
+      onUpdated?.(new Date().toISOString());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load deals');
     } finally {
       setLoading(false);
     }
-  }, [sortBy, selectedRegion, scope]);
+  }, [sortBy, selectedRegion, scope, onUpdated]);
 
   const runNearbyScan = useCallback(async () => {
     setScanning(true);
@@ -153,13 +166,14 @@ export function DealTable({
       setRegionName(null);
       setIsBrowsed(false);
       setLastUpdated(new Date().toISOString());
+      onUpdated?.(new Date().toISOString());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to scan nearby regions');
     } finally {
       setScanning(false);
       setLoading(false);
     }
-  }, [maxJumps, routeFlag, sortBy]);
+  }, [maxJumps, routeFlag, sortBy, onUpdated]);
 
   useEffect(() => {
     getRegions()
@@ -169,16 +183,22 @@ export function DealTable({
   }, []);
 
   useEffect(() => {
-    // A nearby scan fetches an order book per region in range, so it only ever
-    // runs when asked for -- never on an interval, and not on scope change.
     if (scope === 'nearby') {
       setLoading(false);
-      return;
+      // In the main window a nearby scan only runs when asked for -- it reads
+      // an order book per region in range. The popout is the exception: a pane
+      // you leave open has to keep itself current or it's just a screenshot.
+      // The cache-freshness guard makes a rescan inside the ESI cache window
+      // almost free, and route distances are already memoized, so this costs
+      // far less than the first scan did.
+      if (!chromeless) return;
+      const nearbyInterval = setInterval(runNearbyScan, NEARBY_REFRESH_MS);
+      return () => clearInterval(nearbyInterval);
     }
     fetchDeals();
-    const interval = setInterval(fetchDeals, 60000);
+    const interval = setInterval(fetchDeals, LIVE_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [fetchDeals, scope]);
+  }, [fetchDeals, scope, chromeless, runNearbyScan]);
 
   useEffect(() => {
     // Results only describe the scan that produced them. Switching into nearby
@@ -486,17 +506,20 @@ export function DealTable({
             {/* Every data column is pinned, and a trailing spacer soaks up
                 whatever is left over. Letting Item take the remainder made it
                 balloon on a wide window while the numbers stayed cramped. */}
+            {/* Compact drops the fixed Item width and the trailing spacer so
+                the table actually reflows as the popout window is resized;
+                at full size those keep the columns from stretching. */}
             <colgroup>
-              <col style={{ width: '300px' }} />
-              <col style={{ width: '44px' }} />
-              {showsLocation && <col style={{ width: '132px' }} />}
-              {showsLocation && <col style={{ width: '68px' }} />}
-              <col style={{ width: '96px' }} />
+              <col style={compact ? undefined : { width: '300px' }} />
+              <col style={{ width: compact ? '34px' : '44px' }} />
+              {showsLocation && <col style={{ width: compact ? '92px' : '132px' }} />}
+              {showsLocation && <col style={{ width: compact ? '52px' : '68px' }} />}
+              <col style={{ width: compact ? '74px' : '96px' }} />
               {showsDetail && <col style={{ width: '96px' }} />}
-              <col style={{ width: '92px' }} />
-              <col style={{ width: '104px' }} />
+              <col style={{ width: compact ? '66px' : '92px' }} />
+              <col style={{ width: compact ? '80px' : '104px' }} />
               {showsDetail && <col style={{ width: '96px' }} />}
-              <col />
+              {!compact && <col />}
             </colgroup>
             <thead>
               <tr>
@@ -511,7 +534,7 @@ export function DealTable({
                 <th className="num">Disc</th>
                 <th className="num">Profit/u</th>
                 {showsDetail && <th className="num">Volume</th>}
-                <th className="spacer-col" aria-hidden="true" />
+                {!compact && <th className="spacer-col" aria-hidden="true" />}
               </tr>
             </thead>
             <tbody>
@@ -560,7 +583,7 @@ export function DealTable({
                       {deal.volume_available.toLocaleString()}
                     </td>
                   )}
-                  <td className="spacer-col" aria-hidden="true" />
+                  {!compact && <td className="spacer-col" aria-hidden="true" />}
                 </tr>
               ))}
             </tbody>
