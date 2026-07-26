@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   ArbitrageResult,
   RegionSummary,
@@ -123,6 +123,11 @@ interface DealTableProps {
   initialView?: Partial<DealTableView>;
   /** Reports when data last landed, so a chromeless host can show freshness. */
   onUpdated?: (isoTimestamp: string | null) => void;
+  /**
+   * Bump to refetch in place. Used instead of remounting via `key`, which
+   * would discard the scope, region, sort and filters the user had set.
+   */
+  refreshSignal?: number;
 }
 
 export function DealTable({
@@ -131,6 +136,7 @@ export function DealTable({
   chromeless = false,
   initialView,
   onUpdated,
+  refreshSignal = 0,
 }: DealTableProps) {
   const [deals, setDeals] = useState<ArbitrageResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -197,6 +203,23 @@ export function DealTable({
   });
 
   /** A sortable header cell. */
+  const firstSignal = useRef(true);
+  useEffect(() => {
+    // Skip the initial render -- the normal load effect already fetched.
+    if (firstSignal.current) {
+      firstSignal.current = false;
+      return;
+    }
+    // Reload whatever is currently being shown, rather than snapping back to
+    // the character's own region.
+    if (scope === 'nearby') {
+      runNearbyScan();
+    } else {
+      fetchDeals();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
+
   const Th = ({
     field,
     label,

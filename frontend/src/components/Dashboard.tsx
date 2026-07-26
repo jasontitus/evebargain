@@ -125,7 +125,11 @@ export function Dashboard() {
 
       <div className={`dashboard-content${alertsOpen ? '' : ' alerts-collapsed'}`}>
         <div className="deals-section">
-          <DealTable key={dealRefreshKey} progress={progress} />
+          {/* Deliberately not `key={dealRefreshKey}`: changing the key
+              remounts the table and resets scope, region, sort and filters, so
+              editing tracked categories used to throw you back to your own
+              region mid-browse. Pass it as a signal to refetch in place. */}
+          <DealTable progress={progress} refreshSignal={dealRefreshKey} />
         </div>
         <div className="alerts-section">
           <button
