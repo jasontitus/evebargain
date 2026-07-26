@@ -781,6 +781,35 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Every column sorts. The caret slot is always present so switching columns
+   doesn't change any header's width and shuffle the layout. */
+.deal-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.deal-table th.sortable:hover {
+  color: #ffc55e;
+}
+
+.deal-table th.sorted {
+  color: var(--eve-amber);
+}
+
+.sort-caret {
+  display: inline-block;
+  font-size: 0.6rem;
+  min-width: 9px;
+  margin-left: 3px;
+  vertical-align: middle;
+}
+
+/* ISK per m3 -- the number that decides whether a haul is worth the trip. */
+.density-cell {
+  color: var(--green);
+  font-weight: 600;
+}
+
 .deal-table .muted {
   color: var(--text-secondary);
 }

@@ -15,6 +15,12 @@ class ArbitrageResult(BaseModel):
     region_name: str
     # Jumps from the character, set only by the nearby scan.
     jumps: int | None = None
+    # Packaged cubic metres per unit, and profit per cubic metre. Cargo space
+    # is the binding constraint on a haul, so ISK/m3 ranks deals better than
+    # ISK/unit: a 40% discount on something bulky can be worth less per trip
+    # than a 12% discount on something dense.
+    volume_m3: float | None = None
+    isk_per_m3: float | None = None
 
 
 class MarketDealResponse(BaseModel):

@@ -50,6 +50,9 @@ export interface ArbitrageResult {
   region_name: string;
   /** Jumps from the character; only the nearby scan sets this. */
   jumps: number | null;
+  /** Packaged m3 per unit, and profit per m3 -- cargo space is the real limit. */
+  volume_m3: number | null;
+  isk_per_m3: number | null;
 }
 
 export interface MarketDealResponse {

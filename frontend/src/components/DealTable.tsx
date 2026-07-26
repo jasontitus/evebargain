@@ -6,10 +6,53 @@ import type {
   RouteFlag,
 } from '../types';
 import { getDeals, getRegions, getNearbyDeals, refreshMarket } from '../api/market';
-import { formatISK, formatISKShort, formatPercent } from '../utils/format';
+import { formatISK, formatISKShort, formatPercent, formatVolume } from '../utils/format';
 import { FetchProgressBar } from './FetchProgressBar';
 
-type SortField = 'discount' | 'profit' | 'name' | 'jumps';
+type SortField =
+  | 'name'
+  | 'category'
+  | 'region'
+  | 'jumps'
+  | 'local'
+  | 'jita'
+  | 'discount'
+  | 'profit'
+  | 'iskPerM3'
+  | 'volumeM3'
+  | 'available';
+
+type SortDir = 'asc' | 'desc';
+
+/** Which way a column reads best on first click. */
+const DEFAULT_DIR: Record<SortField, SortDir> = {
+  name: 'asc',
+  category: 'asc',
+  region: 'asc',
+  jumps: 'asc',      // nearest first
+  local: 'asc',      // cheapest first
+  jita: 'desc',
+  discount: 'desc',
+  profit: 'desc',
+  iskPerM3: 'desc',
+  volumeM3: 'asc',   // smallest hauls first
+  available: 'desc',
+};
+
+const SORT_VALUE: Record<SortField, (d: ArbitrageResult) => number | string> = {
+  name: (d) => d.type_name.toLowerCase(),
+  category: (d) => (d.category_name ?? '').toLowerCase(),
+  region: (d) => d.region_name.toLowerCase(),
+  jumps: (d) => d.jumps ?? Number.POSITIVE_INFINITY,
+  local: (d) => d.local_price,
+  jita: (d) => d.jita_price,
+  discount: (d) => d.discount_pct,
+  profit: (d) => d.profit_per_unit,
+  // Nulls sort last in either direction rather than pretending to be zero.
+  iskPerM3: (d) => d.isk_per_m3 ?? Number.NEGATIVE_INFINITY,
+  volumeM3: (d) => d.volume_m3 ?? Number.POSITIVE_INFINITY,
+  available: (d) => d.volume_available,
+};
 
 /** Where deals are being read from: the character's region, a browsed one, or a jump radius. */
 type Scope = 'live' | 'region' | 'nearby';
@@ -93,6 +136,9 @@ export function DealTable({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState<SortField>(initialView?.sortBy ?? 'discount');
+  const [sortDir, setSortDir] = useState<SortDir>(
+    DEFAULT_DIR[initialView?.sortBy ?? 'discount']
+  );
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regions, setRegions] = useState<RegionSummary[]>([]);
@@ -127,17 +173,76 @@ export function DealTable({
   const showsDetail = !compact;
 
   const needle = nameFilter.trim().toLowerCase();
-  const visibleDeals = deals.filter(
+  const filteredDeals = deals.filter(
     (d) =>
       (!needle || d.type_name.toLowerCase().includes(needle)) &&
       (!categoryFilter || d.category_name === categoryFilter)
   );
-  const isFiltered = visibleDeals.length !== deals.length;
+  const isFiltered = filteredDeals.length !== deals.length;
+
+  // Sorting is done here rather than server-side: the rows are already in
+  // memory, so re-ordering is instant and every column can be sortable without
+  // the API needing to know about it.
+  const readValue = SORT_VALUE[sortBy];
+  const visibleDeals = [...filteredDeals].sort((a, b) => {
+    const av = readValue(a);
+    const bv = readValue(b);
+    let cmp: number;
+    if (typeof av === 'string' || typeof bv === 'string') {
+      cmp = String(av).localeCompare(String(bv));
+    } else {
+      cmp = av - bv;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  /** A sortable header cell. */
+  const Th = ({
+    field,
+    label,
+    numeric = false,
+    className = '',
+    title,
+  }: {
+    field: SortField;
+    label: string;
+    numeric?: boolean;
+    className?: string;
+    title?: string;
+  }) => {
+    const active = sortBy === field;
+    return (
+      <th
+        className={[numeric ? 'num' : '', className, 'sortable', active ? 'sorted' : '']
+          .filter(Boolean)
+          .join(' ')}
+        onClick={() => toggleSort(field)}
+        title={title ?? `Sort by ${label}`}
+        aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        {label}
+        {/* Reserve the caret on every header so sorting doesn't reflow widths. */}
+        <span className="sort-caret">{active ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+      </th>
+    );
+  };
+
+  /** Click a column to sort by it; click again to flip direction. */
+  const toggleSort = (field: SortField) => {
+    if (field === sortBy) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortDir(DEFAULT_DIR[field]);
+    }
+  };
 
   const fetchDeals = useCallback(async () => {
     try {
       setError(null);
-      const data = await getDeals(sortBy, 0, scope === 'region' ? selectedRegion : null);
+      // Server ordering is irrelevant now that the headers sort in memory --
+      // asking for a different order would refetch the same rows.
+      const data = await getDeals('discount', 0, scope === 'region' ? selectedRegion : null);
       setDeals(data.deals);
       setLastUpdated(data.last_updated);
       setRegionName(data.region_name);
@@ -149,13 +254,13 @@ export function DealTable({
     } finally {
       setLoading(false);
     }
-  }, [sortBy, selectedRegion, scope, onUpdated]);
+  }, [selectedRegion, scope, onUpdated]);
 
   const runNearbyScan = useCallback(async () => {
     setScanning(true);
     setError(null);
     try {
-      const data = await getNearbyDeals(maxJumps, routeFlag, sortBy);
+      const data = await getNearbyDeals(maxJumps, routeFlag, 'discount');
       setDeals(data.deals);
       setNearbyMeta({
         regionsScanned: data.regions_scanned,
@@ -173,7 +278,7 @@ export function DealTable({
       setScanning(false);
       setLoading(false);
     }
-  }, [maxJumps, routeFlag, sortBy, onUpdated]);
+  }, [maxJumps, routeFlag, onUpdated]);
 
   useEffect(() => {
     getRegions()
@@ -330,16 +435,6 @@ export function DealTable({
                 </option>
               ))}
             </optgroup>
-          </select>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortField)}
-            className="sort-select"
-          >
-            <option value="discount">Sort by Discount</option>
-            <option value="profit">Sort by Profit</option>
-            <option value="name">Sort by Name</option>
-            {scope === 'nearby' && <option value="jumps">Sort by Jumps</option>}
           </select>
           <button
             onClick={handleRefresh}
@@ -509,31 +604,43 @@ export function DealTable({
             {/* Compact drops the fixed Item width and the trailing spacer so
                 the table actually reflows as the popout window is resized;
                 at full size those keep the columns from stretching. */}
+            {/* Compact drops the fixed Item width and the trailing spacer so
+                the table actually reflows as the popout window is resized;
+                at full size those keep the columns from stretching. */}
             <colgroup>
-              <col style={compact ? undefined : { width: '300px' }} />
+              <col style={compact ? undefined : { width: '280px' }} />
               <col style={{ width: compact ? '34px' : '44px' }} />
-              {showsLocation && <col style={{ width: compact ? '92px' : '132px' }} />}
-              {showsLocation && <col style={{ width: compact ? '52px' : '68px' }} />}
-              <col style={{ width: compact ? '74px' : '96px' }} />
-              {showsDetail && <col style={{ width: '96px' }} />}
-              <col style={{ width: compact ? '66px' : '92px' }} />
-              <col style={{ width: compact ? '80px' : '104px' }} />
-              {showsDetail && <col style={{ width: '96px' }} />}
+              {showsLocation && <col style={{ width: compact ? '92px' : '120px' }} />}
+              {showsLocation && <col style={{ width: compact ? '52px' : '62px' }} />}
+              <col style={{ width: compact ? '74px' : '90px' }} />
+              {showsDetail && <col style={{ width: '90px' }} />}
+              <col style={{ width: compact ? '66px' : '84px' }} />
+              <col style={{ width: compact ? '80px' : '96px' }} />
+              <col style={{ width: compact ? '80px' : '96px' }} />
+              {showsDetail && <col style={{ width: '84px' }} />}
+              {showsDetail && <col style={{ width: '90px' }} />}
               {!compact && <col />}
             </colgroup>
             <thead>
               <tr>
-                <th>Item</th>
-                <th className="cat-col" title="Category">
-                  Cat
-                </th>
-                {showsLocation && <th>Region</th>}
-                {showsLocation && <th className="num">Jumps</th>}
-                <th className="num">Local</th>
-                {showsDetail && <th className="num">Jita</th>}
-                <th className="num">Disc</th>
-                <th className="num">Profit/u</th>
-                {showsDetail && <th className="num">Volume</th>}
+                <Th field="name" label="Item" />
+                <Th field="category" label="Cat" className="cat-col" title="Category" />
+                {showsLocation && <Th field="region" label="Region" />}
+                {showsLocation && <Th field="jumps" label="Jumps" numeric />}
+                <Th field="local" label="Local" numeric />
+                {showsDetail && <Th field="jita" label="Jita" numeric />}
+                <Th field="discount" label="Disc" numeric />
+                <Th field="profit" label="Profit/u" numeric />
+                <Th
+                  field="iskPerM3"
+                  label="ISK/m3"
+                  numeric
+                  title="Profit per cubic metre -- cargo space is what limits a haul"
+                />
+                {showsDetail && (
+                  <Th field="volumeM3" label="m3/u" numeric title="Packaged volume per unit" />
+                )}
+                {showsDetail && <Th field="available" label="Volume" numeric title="Units on the market" />}
                 {!compact && <th className="spacer-col" aria-hidden="true" />}
               </tr>
             </thead>
@@ -578,6 +685,14 @@ export function DealTable({
                   >
                     {formatISKShort(deal.profit_per_unit)}
                   </td>
+                  <td className="num density-cell">
+                    {deal.isk_per_m3 == null ? '--' : formatISKShort(deal.isk_per_m3)}
+                  </td>
+                  {showsDetail && (
+                    <td className="num muted">
+                      {deal.volume_m3 == null ? '--' : formatVolume(deal.volume_m3)}
+                    </td>
+                  )}
                   {showsDetail && (
                     <td className="num muted">
                       {deal.volume_available.toLocaleString()}

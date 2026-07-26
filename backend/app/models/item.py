@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, Boolean
+from sqlalchemy import Integer, String, Boolean, Float
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -20,3 +20,9 @@ class ItemType(Base):
     category_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     market_group_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     published: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Cubic metres per unit, packaged. ESI reports both an assembled `volume`
+    # and a `packaged_volume`; market goods are packaged, and for ships the two
+    # differ by an order of magnitude (a Rifter is 27,289 m3 assembled against
+    # 2,500 packaged), so using the wrong one would misprice every hauling
+    # decision. Nullable because it backfills after the catalogue load.
+    volume: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
 from app.models.item import ItemType, ItemCategory
@@ -17,6 +17,19 @@ logger = logging.getLogger(__name__)
 # concurrency is capped by the ESI client's semaphore; this bounds the task
 # list and keeps each transaction a reasonable size.
 TYPE_FETCH_CHUNK = 400
+
+
+def packaged_volume(type_data: dict) -> float | None:
+    """Cubic metres per unit as it sits on the market, i.e. packaged.
+
+    Ships report an assembled `volume` an order of magnitude larger than their
+    `packaged_volume`, and what you buy from a station is packaged -- so
+    preferring the assembled figure would misprice every hauling decision.
+    """
+    volume = type_data.get("packaged_volume")
+    if volume is None:
+        volume = type_data.get("volume")
+    return volume
 
 
 async def load_categories(db: AsyncSession):
@@ -92,6 +105,7 @@ async def load_types_for_category(db: AsyncSession, category_id: int):
                 category_id=category_id,
                 market_group_id=type_data.get("market_group_id"),
                 published=type_data.get("published", True),
+                volume=packaged_volume(type_data),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["type_id"],
@@ -101,6 +115,7 @@ async def load_types_for_category(db: AsyncSession, category_id: int):
                     "category_id": stmt.excluded.category_id,
                     "market_group_id": stmt.excluded.market_group_id,
                     "published": stmt.excluded.published,
+                    "volume": stmt.excluded.volume,
                 },
             )
             await db.execute(stmt)
@@ -150,3 +165,48 @@ async def load_all_static_data(db: AsyncSession, force: bool = False):
 
     final_count = await db.execute(select(func.count(ItemType.type_id)))
     logger.info(f"Static data load complete: {final_count.scalar()} total types")
+
+
+async def backfill_volumes(db: AsyncSession) -> int:
+    """Fill in volume for catalogue rows loaded before the column existed.
+
+    Only touches rows where it is still NULL, so this is resumable and costs
+    nothing once complete -- it re-reads /universe/types/ for those rows only,
+    rather than reloading the whole catalogue.
+    """
+    missing = (
+        await db.execute(
+            select(ItemType.type_id).where(ItemType.volume.is_(None))
+        )
+    ).scalars().all()
+
+    if not missing:
+        return 0
+
+    logger.info(f"Backfilling volume for {len(missing)} item types")
+
+    async def fetch(type_id: int) -> tuple[int, float | None]:
+        try:
+            resp = await esi_client.get(f"/universe/types/{type_id}/")
+            return type_id, packaged_volume(resp.json())
+        except Exception:
+            return type_id, None
+
+    filled = 0
+    for start in range(0, len(missing), TYPE_FETCH_CHUNK):
+        chunk = missing[start : start + TYPE_FETCH_CHUNK]
+        for type_id, volume in await asyncio.gather(*[fetch(t) for t in chunk]):
+            if volume is None:
+                continue
+            await db.execute(
+                update(ItemType).where(ItemType.type_id == type_id).values(volume=volume)
+            )
+            filled += 1
+        await db.commit()
+        logger.info(
+            f"Volume backfill: {min(start + TYPE_FETCH_CHUNK, len(missing))}"
+            f"/{len(missing)} processed"
+        )
+
+    logger.info(f"Volume backfill complete: {filled} types now have a volume")
+    return filled

@@ -60,3 +60,16 @@ export function formatISKCompact(value: number): string {
   }
   return value.toFixed(2) + ' ISK';
 }
+
+/**
+ * Cubic metres, at a precision that suits the magnitude: ore is 0.01 m3 and a
+ * battleship is 500,000, so a fixed decimal count is wrong at one end or the
+ * other.
+ */
+export function formatVolume(m3: number): string {
+  if (m3 >= 1_000_000) return (m3 / 1_000_000).toFixed(2) + 'M';
+  if (m3 >= 10_000) return (m3 / 1_000).toFixed(1) + 'K';
+  if (m3 >= 10) return m3.toFixed(0);
+  if (m3 >= 1) return m3.toFixed(1);
+  return m3.toFixed(2);
+}

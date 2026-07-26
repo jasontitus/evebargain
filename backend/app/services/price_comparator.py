@@ -65,6 +65,7 @@ async def find_arbitrage(
             jita_cache.c.jita_price,
             ItemType.name.label("type_name"),
             ItemType.category_id.label("category_id"),
+            ItemType.volume.label("volume_m3"),
         )
         .join(jita_cache, local_cache.c.type_id == jita_cache.c.type_id)
         .join(ItemType, local_cache.c.type_id == ItemType.type_id)
@@ -111,6 +112,15 @@ async def find_arbitrage(
         if row.local_volume < user_config.min_volume:
             continue
 
+        # Guard the divide: volume is nullable until the backfill runs, and a
+        # zero-volume type would blow up rather than rank infinitely well.
+        volume_m3 = row.volume_m3
+        isk_per_m3 = (
+            round(profit_per_unit / volume_m3, 2)
+            if volume_m3 and volume_m3 > 0
+            else None
+        )
+
         deals.append(ArbitrageResult(
             type_id=row.type_id,
             type_name=row.type_name,
@@ -121,6 +131,8 @@ async def find_arbitrage(
             discount_pct=round(discount_pct, 4),
             profit_per_unit=round(profit_per_unit, 2),
             volume_available=row.local_volume,
+            volume_m3=volume_m3,
+            isk_per_m3=isk_per_m3,
             region_id=region_id,
             region_name=region_name,
         ))

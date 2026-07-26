@@ -14,7 +14,7 @@ from app.database import async_session, init_db
 from app.models.item import ItemType
 from app.routers import auth, config, market, alerts, ws
 from app.services.esi_client import esi_client
-from app.services.sde_loader import load_all_static_data
+from app.services.sde_loader import load_all_static_data, backfill_volumes
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
@@ -40,6 +40,12 @@ async def _ensure_static_data():
         count = (await db.execute(select(func.count()).select_from(ItemType))).scalar()
         if count:
             logger.info("Static item data present (%d types)", count)
+            # Volume arrived after the catalogue did, so existing rows need it
+            # filled in. No-op once done.
+            try:
+                await backfill_volumes(db)
+            except Exception:
+                logger.exception("Volume backfill failed -- m3 columns stay empty")
             return
 
         logger.warning(
