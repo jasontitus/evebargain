@@ -52,7 +52,15 @@ This is built for the player who's already traveling. You're not going out of yo
    URL registered here must match `EVE_CALLBACK_URL` in `.env` character for
    character, port included.
 
-2. **Python 3.11+** and **Node.js 18+**
+2. **Python 3.11+**
+
+3. **Node.js 20.19+ or 22.12+** -- required by Vite 8; Node 18 will not run the
+   frontend at all. `frontend/.nvmrc` pins a good version, so with
+   [nvm](https://github.com/nvm-sh/nvm):
+
+   ```bash
+   cd frontend && nvm install && nvm use
+   ```
 
 ## Quick Start
 
@@ -146,6 +154,13 @@ You are on the backend port. `http://localhost:8000` serves the API only -- the 
 **Login bounces to an EVE SSO error page**
 
 `EVE_CLIENT_ID` / `EVE_SECRET_KEY` are not set. Put `.env` in the repo root (next to `docker-compose.yml`), not in `backend/`, and restart the backend -- it logs a warning at startup when the credentials are missing.
+
+**`Vite requires Node.js version 20.19+ or 22.12+`**
+
+Your Node is too old. Check with `node --version`, then upgrade -- with nvm,
+`cd frontend && nvm install && nvm use`. If `nvm use` reports the right version
+but the error persists, you have another terminal on the old Node: `nvm use`
+applies per shell.
 
 **Logging in dumps me on JSON instead of the app**
 

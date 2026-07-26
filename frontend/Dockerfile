@@ -2,7 +2,9 @@ FROM node:22-slim AS build
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# .npmrc carries engine-strict, so a base image below the engines floor fails
+# here rather than somewhere further into the build.
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 COPY . .
