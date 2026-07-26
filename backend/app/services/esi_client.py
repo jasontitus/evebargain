@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -155,8 +156,13 @@ class ESIClient:
         path: str,
         token: str | None = None,
         params: dict | None = None,
+        on_progress: "Callable[[int, int], Awaitable[None]] | None" = None,
     ) -> list:
-        """Fetch all pages of a paginated ESI endpoint."""
+        """Fetch all pages of a paginated ESI endpoint.
+
+        on_progress, if given, is awaited with (completed, total) as pages land
+        so callers can report progress on the long multi-hundred-page pulls.
+        """
         if params is None:
             params = {}
 
@@ -166,13 +172,24 @@ class ESIClient:
         total_pages = int(first_response.headers.get("X-Pages", 1))
         results = list(first_data)
 
+        if on_progress:
+            await on_progress(1, total_pages)
+
         if total_pages <= 1:
             return results
 
-        # Fetch remaining pages concurrently
+        # Emit at most ~20 updates over the whole pull. One message per page
+        # would put 274 sends on the socket for a single Jita fetch.
+        step = max(1, total_pages // 20)
+        completed = 1
+
         async def fetch_page(page: int) -> list:
+            nonlocal completed
             page_params = {**params, "page": page}
             data, _ = await self.get_json(path, token=token, params=page_params)
+            completed += 1
+            if on_progress and (completed % step == 0 or completed == total_pages):
+                await on_progress(completed, total_pages)
             return data
 
         tasks = [fetch_page(p) for p in range(2, total_pages + 1)]

@@ -39,7 +39,9 @@ class UserConfig(Base):
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sound_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     min_volume: Mapped[int] = mapped_column(Integer, default=5)
-    min_profit_isk: Mapped[float] = mapped_column(Float, default=1000000.0)
+    # 1M ISK/unit excluded almost everything except ships and faction modules,
+    # which is where routine ammo and module arbitrage lives.
+    min_profit_isk: Mapped[float] = mapped_column(Float, default=50000.0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )

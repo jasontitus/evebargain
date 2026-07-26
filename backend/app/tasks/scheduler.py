@@ -83,11 +83,31 @@ async def scan_market_for_user(
             tracked_categories = json.loads(user_config.tracked_category_ids)
             type_ids = await get_tracked_type_ids(db, tracked_categories)
 
+            region_name = await location.get_region_name(target_region)
+
+            def progress_for(phase: str, name: str):
+                async def report(completed: int, total: int):
+                    await ws_manager.send_progress(
+                        user_id, phase, name, completed, total
+                    )
+                return report
+
             # Update both local region and Jita market data
             await update_market_cache(
-                db, target_region, type_filter=type_ids, force=force
+                db,
+                target_region,
+                type_filter=type_ids,
+                force=force,
+                on_progress=progress_for("region", region_name),
             )
-            await update_jita_cache(db, type_ids=type_ids)
+            await update_jita_cache(
+                db,
+                type_ids=type_ids,
+                on_progress=progress_for("jita", "Jita"),
+            )
+            await ws_manager.send_progress(
+                user_id, "compare", region_name, 1, 1, done=True
+            )
 
             # Find arbitrage opportunities
             deals = await find_arbitrage(db, target_region, user_config)

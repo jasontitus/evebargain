@@ -16,6 +16,10 @@
   --yellow-bg: rgba(245, 158, 11, 0.1);
   --border: #374151;
   --border-light: #4b5563;
+  /* EVE's UI amber, matching the app icon's targeting brackets. */
+  --eve-amber: #f5b03c;
+  --eve-amber-dim: #6b4f1e;
+  --eve-amber-bg: rgba(245, 176, 60, 0.07);
 }
 
 /* ===== Global ===== */
@@ -263,17 +267,36 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px;
+  /* Filtering down to a few rows used to collapse the panel and jump the page.
+     Hold a floor so the surrounding layout stays put. */
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
 }
 
 .deal-table-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   margin-bottom: 12px;
+  /* The count in the heading changes as you filter; without a fixed row height
+     the controls beside it nudge up and down. */
+  min-height: 34px;
 }
 
 .deal-table-header h2 {
   font-size: 1.1rem;
+  /* "(3 of 142)" is wider than "(142)" -- don't let that push the controls. */
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deal-controls {
+  flex-shrink: 0;
 }
 
 .deal-controls {
@@ -348,48 +371,167 @@ body {
 
 .link-btn:hover { color: var(--accent-hover); }
 
+/* ===== Deal Filters ===== */
+
+.deal-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filter-input {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  flex: 1;
+  font-size: 0.85rem;
+  min-width: 0;
+  padding: 6px 10px;
+}
+
+.filter-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.filter-input::placeholder { color: var(--text-muted); }
+
+.category-cell {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* ===== Fetch Progress ===== */
+
+.fetch-progress {
+  margin-bottom: 12px;
+}
+
+.fetch-progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.fetch-progress-pct {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fetch-progress-track {
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  height: 4px;
+  overflow: hidden;
+}
+
+.fetch-progress-fill {
+  background: var(--accent);
+  height: 100%;
+  transition: width 0.25s ease-out;
+}
+
+/* Pages land out of order, so a single-page fetch has nothing meaningful to
+   animate -- pulse instead of showing a bar frozen at 100%. */
+.fetch-progress-fill[style*="width: 100%"] {
+  animation: fetch-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes fetch-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 .no-deals {
   text-align: center;
   padding: 32px;
   color: var(--text-muted);
 }
 
+/* Wide content scrolls inside its own box rather than the page. */
+.deal-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+}
+
 .deal-table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  /* Widths come from <colgroup>, not content. Content-driven columns made
+     every filter keystroke reflow the whole table. */
+  table-layout: fixed;
 }
 
 .deal-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   text-align: left;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-secondary);
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--eve-amber-dim);
+  color: var(--eve-amber);
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1.2px;
 }
 
 .deal-table td {
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deal-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Numbers line up digit-for-digit so columns read as a column, and equal-width
+   digits mean a value changing never changes its footprint. */
+.deal-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-table .muted {
+  color: var(--text-secondary);
+}
+
+.deal-table tbody tr {
+  /* Reserve the accent stripe on every row so hover doesn't shift content. */
+  box-shadow: inset 2px 0 0 transparent;
+  transition: background 0.12s, box-shadow 0.12s;
 }
 
 .deal-table tbody tr:hover {
   background: var(--bg-card-hover);
+  box-shadow: inset 2px 0 0 var(--eve-amber);
 }
 
 .deal-table .high-value-row {
-  background: rgba(16, 185, 129, 0.05);
+  background: var(--eve-amber-bg);
+}
+
+.deal-table .high-value-row:hover {
+  background: rgba(245, 176, 60, 0.14);
 }
 
 .item-name-cell {
   font-weight: 500;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--text-primary);
 }
 
 .discount-cell {
@@ -398,8 +540,13 @@ body {
 }
 
 .profit-cell {
-  color: var(--yellow);
-  font-weight: 500;
+  color: var(--eve-amber);
+  font-weight: 600;
+}
+
+.deal-region-tag {
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 
 /* ===== Alert Feed ===== */

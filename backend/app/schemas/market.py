@@ -4,6 +4,8 @@ from pydantic import BaseModel
 class ArbitrageResult(BaseModel):
     type_id: int
     type_name: str
+    category_id: int | None = None
+    category_name: str | None = None
     local_price: float
     jita_price: float
     discount_pct: float

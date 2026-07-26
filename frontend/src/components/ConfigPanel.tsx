@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { UserConfig, UserConfigUpdate, CategoryInfo } from '../types';
 import { getConfig, updateConfig, getCategories } from '../api/config';
 import { formatPercent, formatISKCompact } from '../utils/format';
+
+/** Long enough to coalesce a slider drag, short enough to feel immediate. */
+const AUTOSAVE_DELAY_MS = 700;
 
 export function ConfigPanel() {
   const [config, setConfig] = useState<UserConfig | null>(null);
@@ -9,6 +12,10 @@ export function ConfigPanel() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Skips the write that would otherwise fire on the initial load.
+  const loaded = useRef(false);
 
   useEffect(() => {
     async function load() {
@@ -16,29 +23,60 @@ export function ConfigPanel() {
         const [cfg, cats] = await Promise.all([getConfig(), getCategories()]);
         setConfig(cfg);
         setCategories(cats);
-      } catch (e) {
+        loaded.current = true;
+      } catch {
         setError('Failed to load configuration');
       }
     }
     load();
+    return () => {
+      clearTimeout(saveTimer.current);
+      clearTimeout(savedTimer.current);
+    };
   }, []);
 
-  const handleSave = async () => {
-    if (!config) return;
+  const save = useCallback(async (next: UserConfig) => {
     setSaving(true);
-    setSaved(false);
     setError(null);
-
     try {
-      const updated = await updateConfig(config as UserConfigUpdate);
-      setConfig(updated);
+      await updateConfig(next as UserConfigUpdate);
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      setError('Failed to save configuration');
+      // Surface the server's reason -- a rejected category ID reads very
+      // differently from the request never landing.
+      setError(e instanceof Error ? e.message : 'Failed to save configuration');
     } finally {
       setSaving(false);
     }
+  }, []);
+
+  /**
+   * Every control routes through here so a change is never left sitting in
+   * local state. The old panel only wrote on an explicit Save press, while the
+   * dashboard's category picker saved on every toggle -- so identical-looking
+   * edits persisted in one place and were silently dropped in the other.
+   */
+  const applyChange = useCallback(
+    (patch: Partial<UserConfig>) => {
+      setConfig((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, ...patch };
+        if (loaded.current) {
+          clearTimeout(saveTimer.current);
+          saveTimer.current = setTimeout(() => save(next), AUTOSAVE_DELAY_MS);
+        }
+        return next;
+      });
+    },
+    [save]
+  );
+
+  const handleSaveNow = () => {
+    if (!config) return;
+    clearTimeout(saveTimer.current);
+    save(config);
   };
 
   const toggleCategory = (categoryId: number) => {
@@ -47,7 +85,7 @@ export function ConfigPanel() {
     const updated = current.includes(categoryId)
       ? current.filter((id) => id !== categoryId)
       : [...current, categoryId];
-    setConfig({ ...config, tracked_category_ids: updated });
+    applyChange({ tracked_category_ids: updated });
   };
 
   if (!config) {
@@ -59,7 +97,9 @@ export function ConfigPanel() {
       <h2>Alert Configuration</h2>
 
       {error && <div className="error-msg">{error}</div>}
-      {saved && <div className="success-msg">Settings saved!</div>}
+      <div className="save-status" aria-live="polite">
+        {saving ? 'Saving...' : saved ? 'Saved' : 'Changes save automatically'}
+      </div>
 
       <section className="config-section">
         <h3>Discount Threshold</h3>
@@ -73,10 +113,7 @@ export function ConfigPanel() {
             max="50"
             value={config.discount_threshold * 100}
             onChange={(e) =>
-              setConfig({
-                ...config,
-                discount_threshold: parseInt(e.target.value) / 100,
-              })
+              applyChange({ discount_threshold: parseInt(e.target.value) / 100 })
             }
             className="threshold-slider"
           />
@@ -95,7 +132,7 @@ export function ConfigPanel() {
           type="number"
           value={config.min_profit_isk}
           onChange={(e) =>
-            setConfig({ ...config, min_profit_isk: parseFloat(e.target.value) || 0 })
+            applyChange({ min_profit_isk: parseFloat(e.target.value) || 0 })
           }
           className="number-input"
           min="0"
@@ -113,7 +150,7 @@ export function ConfigPanel() {
           type="number"
           value={config.min_volume}
           onChange={(e) =>
-            setConfig({ ...config, min_volume: parseInt(e.target.value) || 1 })
+            applyChange({ min_volume: parseInt(e.target.value) || 1 })
           }
           className="number-input"
           min="1"
@@ -147,7 +184,7 @@ export function ConfigPanel() {
               type="checkbox"
               checked={config.notifications_enabled}
               onChange={(e) =>
-                setConfig({ ...config, notifications_enabled: e.target.checked })
+                applyChange({ notifications_enabled: e.target.checked })
               }
             />
             <span>Browser Notifications</span>
@@ -157,7 +194,7 @@ export function ConfigPanel() {
               type="checkbox"
               checked={config.sound_enabled}
               onChange={(e) =>
-                setConfig({ ...config, sound_enabled: e.target.checked })
+                applyChange({ sound_enabled: e.target.checked })
               }
             />
             <span>Sound Alert</span>
@@ -165,8 +202,8 @@ export function ConfigPanel() {
         </div>
       </section>
 
-      <button onClick={handleSave} disabled={saving} className="save-btn">
-        {saving ? 'Saving...' : 'Save Settings'}
+      <button onClick={handleSaveNow} disabled={saving} className="save-btn">
+        {saving ? 'Saving...' : 'Save Now'}
       </button>
     </div>
   );

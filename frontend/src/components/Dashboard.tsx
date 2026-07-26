@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import type { Alert, WSMessage } from '../types';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type { Alert, WSMessage, FetchProgress } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNotifications } from '../hooks/useNotifications';
@@ -18,6 +18,10 @@ export function Dashboard() {
   const [regionName, setRegionName] = useState(user?.current_region_name || null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dealRefreshKey, setDealRefreshKey] = useState(0);
+  const [progress, setProgress] = useState<FetchProgress | null>(null);
+  const progressTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => clearTimeout(progressTimeout.current), []);
 
   // Check if user needs onboarding (no categories selected)
   useEffect(() => {
@@ -51,6 +55,18 @@ export function Dashboard() {
 
       if (msg.type === 'region_change' && msg.data) {
         setRegionName(msg.data.region_name as string);
+      }
+
+      if (msg.type === 'fetch_progress' && msg.data) {
+        const update = msg.data as unknown as FetchProgress;
+        setProgress(update.done ? null : update);
+
+        // A failed scan stops sending updates without ever setting done, which
+        // would strand the bar on screen. Clear it if nothing follows.
+        clearTimeout(progressTimeout.current);
+        if (!update.done) {
+          progressTimeout.current = setTimeout(() => setProgress(null), 15000);
+        }
       }
     },
     [notify]
@@ -100,7 +116,7 @@ export function Dashboard() {
 
       <div className="dashboard-content">
         <div className="deals-section">
-          <DealTable key={dealRefreshKey} />
+          <DealTable key={dealRefreshKey} progress={progress} />
         </div>
         <div className="alerts-section">
           <AlertFeed newAlerts={newAlerts} />

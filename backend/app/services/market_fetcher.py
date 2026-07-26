@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from sqlalchemy import select, delete, func
@@ -14,7 +15,10 @@ from app.utils.eve_constants import THE_FORGE_REGION_ID
 logger = logging.getLogger(__name__)
 
 
-async def fetch_region_sell_orders(region_id: int) -> dict[int, dict]:
+async def fetch_region_sell_orders(
+    region_id: int,
+    on_progress: Callable[[int, int], Awaitable[None]] | None = None,
+) -> dict[int, dict]:
     """Fetch all sell orders for a region and aggregate to lowest price per type.
 
     Returns dict mapping type_id -> {lowest_sell, order_count, volume_remain}
@@ -23,6 +27,7 @@ async def fetch_region_sell_orders(region_id: int) -> dict[int, dict]:
     all_orders = await esi_client.get_paginated(
         f"/markets/{region_id}/orders/",
         params={"order_type": "sell"},
+        on_progress=on_progress,
     )
 
     # Aggregate: find lowest sell price and total volume per type
@@ -71,6 +76,7 @@ async def update_market_cache(
     region_id: int,
     type_filter: set[int] | None = None,
     force: bool = False,
+    on_progress: Callable[[int, int], Awaitable[None]] | None = None,
 ):
     """Fetch market data for a region and update the cache.
 
@@ -87,7 +93,7 @@ async def update_market_cache(
         )
         return
 
-    aggregated = await fetch_region_sell_orders(region_id)
+    aggregated = await fetch_region_sell_orders(region_id, on_progress=on_progress)
     now = datetime.utcnow()
 
     rows_to_upsert = []
@@ -138,9 +144,16 @@ async def get_tracked_type_ids(db: AsyncSession, category_ids: list[int]) -> set
 
 
 async def update_jita_cache(
-    db: AsyncSession, type_ids: set[int] | None = None, force: bool = False
+    db: AsyncSession,
+    type_ids: set[int] | None = None,
+    force: bool = False,
+    on_progress: Callable[[int, int], Awaitable[None]] | None = None,
 ):
     """Update market cache specifically for The Forge (Jita) region."""
     await update_market_cache(
-        db, THE_FORGE_REGION_ID, type_filter=type_ids, force=force
+        db,
+        THE_FORGE_REGION_ID,
+        type_filter=type_ids,
+        force=force,
+        on_progress=on_progress,
     )

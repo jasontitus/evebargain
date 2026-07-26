@@ -70,6 +70,33 @@ class ConnectionManager:
         }
         await self.broadcast_to_user(user_id, payload)
 
+    async def send_progress(
+        self,
+        user_id: int,
+        phase: str,
+        region_name: str,
+        completed: int,
+        total: int,
+        done: bool = False,
+    ):
+        """Report how far along a market fetch is.
+
+        A full Jita pull is ~275 pages and takes several seconds, which is far
+        too long to leave the UI showing an unqualified spinner.
+        """
+        payload = {
+            "type": "fetch_progress",
+            "data": {
+                "phase": phase,
+                "region_name": region_name,
+                "completed": completed,
+                "total": total,
+                "done": done,
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        await self.broadcast_to_user(user_id, payload)
+
     async def send_market_update(self, user_id: int, region_id: int, deal_count: int):
         """Notify the frontend that market data was refreshed."""
         payload = {

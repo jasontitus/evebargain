@@ -32,6 +32,8 @@ export interface CategoryInfo {
 export interface ArbitrageResult {
   type_id: number;
   type_name: string;
+  category_id: number | null;
+  category_name: string | null;
   local_price: number;
   jita_price: number;
   discount_pct: number;
@@ -80,7 +82,22 @@ export interface AlertListResponse {
 }
 
 export interface WSMessage {
-  type: 'arbitrage_alert' | 'region_change' | 'market_update' | 'connected' | 'pong';
+  type:
+    | 'arbitrage_alert'
+    | 'region_change'
+    | 'market_update'
+    | 'fetch_progress'
+    | 'connected'
+    | 'pong';
   data?: Record<string, unknown>;
   timestamp?: string;
+}
+
+export interface FetchProgress {
+  /** Which leg of the scan: the local region, Jita, or the comparison. */
+  phase: 'region' | 'jita' | 'compare';
+  region_name: string;
+  completed: number;
+  total: number;
+  done: boolean;
 }
