@@ -228,8 +228,28 @@ async def get_deals(
     if region_id is not None:
         tracked = json.loads(user_config.tracked_category_ids)
         type_ids = await get_tracked_type_ids(db, tracked)
-        await update_market_cache(db, target_region, type_filter=type_ids)
-        await update_jita_cache(db, type_ids=type_ids)
+
+        browsed_name = await get_region_name(target_region)
+
+        def progress_for(phase: str, name: str):
+            async def report(completed: int, total: int):
+                await ws_manager.send_progress(
+                    user.id, phase, name, completed, total
+                )
+            return report
+
+        await update_market_cache(
+            db,
+            target_region,
+            type_filter=type_ids,
+            on_progress=progress_for("region", browsed_name),
+        )
+        await update_jita_cache(
+            db, type_ids=type_ids, on_progress=progress_for("jita", "Jita")
+        )
+        await ws_manager.send_progress(
+            user.id, "compare", browsed_name, 1, 1, done=True
+        )
 
     # Find deals
     deals = await find_arbitrage(db, target_region, user_config)
