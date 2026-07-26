@@ -11,6 +11,7 @@ lifetime and keyed by (origin, destination, flag).
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 from app.services.esi_client import esi_client
 from app.services.location import list_regions, resolve_system_to_region
@@ -92,6 +93,7 @@ async def region_distances(
     origin_system_id: int,
     flag: str = "shortest",
     max_jumps: int | None = None,
+    on_progress: Callable[[int, int], Awaitable[None]] | None = None,
 ) -> dict[int, int]:
     """Map region_id -> jumps from origin, for every reachable k-space region.
 
@@ -108,14 +110,24 @@ async def region_distances(
         # constellation. Static, so this cost is paid once per process.
         await asyncio.gather(*[_sample_systems(r) for r in regions])
 
+    # A cold measurement is a few hundred route lookups and runs for ~15s.
+    # Reporting as regions land keeps that from looking like a hang.
+    done = 0
+    total = len(regions)
+
     async def nearest(region_id: int) -> tuple[int, int | None]:
+        nonlocal done
         samples = _region_samples.get(region_id) or []
         if not samples:
+            done += 1
             return region_id, None
         hops = await asyncio.gather(
             *[_route_jumps(origin_system_id, s, flag) for s in samples]
         )
         reachable = [h for h in hops if h is not None]
+        done += 1
+        if on_progress:
+            await on_progress(done, total)
         return region_id, min(reachable) if reachable else None
 
     measured = await asyncio.gather(*[nearest(r) for r in regions])

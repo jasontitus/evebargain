@@ -123,9 +123,25 @@ async def nearby_deals(
     if not user_config:
         raise HTTPException(status_code=400, detail="Config not found")
 
+    # Emit before any work starts. Measuring distances is a few hundred route
+    # lookups and runs ~15s cold, and the Jita pull follows it -- so the first
+    # progress message used to arrive 20s after the button was pressed, which
+    # read as the scan not having started at all.
+    await ws_manager.send_progress(
+        user.id, "distances", "measuring jump distances", 0, 1
+    )
+
+    async def distance_progress(completed: int, total: int):
+        await ws_manager.send_progress(
+            user.id, "distances", "measuring jump distances", completed, total
+        )
+
     try:
         distances = await region_distances(
-            user.current_system_id, flag=flag, max_jumps=max_jumps
+            user.current_system_id,
+            flag=flag,
+            max_jumps=max_jumps,
+            on_progress=distance_progress,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -147,8 +163,13 @@ async def nearby_deals(
     tracked = json.loads(user_config.tracked_category_ids)
     type_ids = await get_tracked_type_ids(db, tracked)
 
-    # Jita once up front -- every comparison needs it.
-    await update_jita_cache(db, type_ids=type_ids)
+    # Jita once up front -- every comparison needs it. Reported too: cold it's
+    # ~275 pages, which is otherwise another silent stretch before the
+    # per-region loop starts.
+    async def jita_progress(completed: int, total: int):
+        await ws_manager.send_progress(user.id, "jita", "Jita", completed, total)
+
+    await update_jita_cache(db, type_ids=type_ids, on_progress=jita_progress)
 
     all_deals: list[ArbitrageResult] = []
     for index, (region_id, jumps) in enumerate(targets, start=1):

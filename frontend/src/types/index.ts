@@ -119,7 +119,7 @@ export interface WSMessage {
 
 export interface FetchProgress {
   /** Which leg of the scan: the local region, Jita, the comparison, or a nearby sweep. */
-  phase: 'region' | 'jita' | 'compare' | 'nearby';
+  phase: 'region' | 'jita' | 'compare' | 'nearby' | 'distances';
   region_name: string;
   completed: number;
   total: number;

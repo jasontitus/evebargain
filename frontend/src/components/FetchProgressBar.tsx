@@ -5,6 +5,7 @@ const PHASE_LABEL: Record<FetchProgress['phase'], string> = {
   jita: 'Reading Jita orders',
   compare: 'Comparing prices in',
   nearby: 'Scanning nearby regions --',
+  distances: 'Measuring jump distances --',
 };
 
 /**
@@ -18,7 +19,7 @@ export function FetchProgressBar({ progress }: { progress: FetchProgress }) {
   const label = PHASE_LABEL[phase] ?? 'Scanning';
   // The jita phase names its own market; the rest carry a region or a count.
   const showsRegion = phase !== 'jita';
-  const showsPages = total > 1 && phase !== 'nearby';
+  const showsPages = total > 1 && phase !== 'nearby' && phase !== 'distances';
 
   return (
     <div className="fetch-progress" role="status" aria-live="polite">
