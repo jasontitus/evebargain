@@ -117,6 +117,37 @@ asyncio.run(main())
 
 This fetches item categories, groups, and types from ESI. It takes a few minutes on first run but is cached in the database.
 
+## Desktop Launcher (Linux)
+
+Instead of starting both servers by hand, install a menu entry that boots the
+stack and opens it in a browser tab:
+
+```bash
+./scripts/install-launcher.sh
+```
+
+This writes `~/.local/share/applications/evebargain.desktop` and installs the
+icon under `~/.local/share/icons/hicolor`. Look for **EVE Bargain** in the
+application menu; drag it to the panel or desktop to pin it. Right-click gives
+**Stop EVE Bargain** and **View Logs**.
+
+The launcher runs `scripts/evebargain`, which you can also call directly:
+
+```bash
+./scripts/evebargain start   # start whatever isn't already running, open a tab
+./scripts/evebargain stop    # stop both servers
+./scripts/evebargain logs    # tail both logs
+```
+
+It is idempotent -- if a server is already listening on its port it is left
+alone and only the tab opens, so clicking the launcher twice won't spawn
+duplicates. Logs go to `~/.local/state/evebargain/`. It prefers Brave
+(Flatpak `com.brave.Browser`, then a native install) and falls back to
+`xdg-open`.
+
+Note that this runs the Vite dev server, which is the intended setup for
+watching the market while you play. It is not a hardened production deployment.
+
 ## Docker
 
 ```bash
@@ -201,9 +232,13 @@ Browser <---> Frontend (React) <---> Backend (FastAPI)
 ```
 
 **Background Tasks (APScheduler):**
-- Location polling: every 30s per active user
+- Location polling: every 30s per active user, starting immediately on login
 - Market data refresh: every 5 min per region
 - Jita price pre-warming: every 5 min globally
+
+Location polling is registered in the SSO callback, so **restarting the backend
+stops polling until you log in again.** Deals still render from cached data,
+but region changes won't be picked up.
 
 **Market Comparison Pipeline:**
 1. Location poller detects region change
@@ -211,3 +246,37 @@ Browser <---> Frontend (React) <---> Backend (FastAPI)
 3. Fetch/use cached Jita sell orders
 4. Compare lowest prices, filter by user preferences
 5. Push matching deals via WebSocket to the browser
+
+## Being a Good ESI Citizen
+
+A full Jita pull is ~275 pages / 273k sell orders. Left unchecked the app would
+issue roughly 6,800 requests an hour for a single user, most of them returning
+byte-identical data. Four things keep that in bounds:
+
+- **Identifying User-Agent.** CCP asks third-party apps to say who they are so
+  they can contact you about a misbehaving client rather than just blocking it.
+  Set `ESI_CONTACT` in `.env` to an email or Discord handle. It is sent on every
+  ESI request, so treat it as public.
+- **Cache-freshness guard.** ESI serves market order pages from a ~300s cache.
+  `update_market_cache` skips the fetch entirely when the stored rows are
+  younger than `MARKET_CACHE_TTL`, which is what stops the periodic Jita refresh
+  and the per-user scan from each pulling the same 275 pages every 5 minutes.
+- **ETag conditional requests.** Public GETs send `If-None-Match`; a 304 costs
+  no body transfer and reuses the decoded payload.
+- **Bounded concurrency.** `ESI_MAX_CONCURRENCY` (default 10) caps in-flight
+  requests so a paginated pull can't open hundreds of sockets at once.
+
+The manual **Refresh** button forces a refetch of your *local* region only.
+Jita is deliberately left on the freshness guard so repeated clicks can't drag
+275 pages along with them.
+
+ESI's hard limit is an *error* rate limit, surfaced via
+`X-Esi-Error-Limit-Remain` and a 420 response; `esi_client.py` backs off and
+retries once when it sees one. Successful requests are not capped by a
+documented rate, but that is not licence to hammer it.
+
+For reference, measured against live ESI: there are **114 regions**, and
+fetching page 1 of every one of them totals **1,210 pages** for a complete
+all-region sweep. Only 6 regions exceed 50 pages (The Forge 274, Domain 128,
+Sinq Laison 92, Heimatar 85, Lonetrek 60, Metropolis 53); 88 regions are 5
+pages or fewer.

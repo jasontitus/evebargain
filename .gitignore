@@ -18,6 +18,9 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+# WAL mode sidecar files
+*.db-shm
+*.db-wal
 
 # IDE
 .idea/

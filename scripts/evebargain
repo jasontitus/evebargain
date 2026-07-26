@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Start the EVE Bargain stack and open it in a browser tab.
+#
+# Idempotent: if a server is already listening on its port this leaves it alone
+# and just opens the tab, so double-clicking the launcher a second time doesn't
+# spawn duplicates.
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKEND_PORT=8000
+FRONTEND_PORT=5173
+URL="http://localhost:${FRONTEND_PORT}"
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/evebargain"
+
+mkdir -p "$LOG_DIR"
+
+listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+notify() {
+    command -v notify-send >/dev/null 2>&1 && notify-send -a "EVE Bargain" "$@" || true
+}
+
+start_backend() {
+    if listening "$BACKEND_PORT"; then
+        echo "backend already up on :$BACKEND_PORT"
+        return 0
+    fi
+    if [[ ! -x "$REPO/backend/.venv/bin/uvicorn" ]]; then
+        echo "ERROR: no venv at $REPO/backend/.venv -- see README setup" >&2
+        notify -u critical "Backend venv missing" "Run the setup steps in README.md"
+        return 1
+    fi
+    echo "starting backend on :$BACKEND_PORT"
+    ( cd "$REPO/backend" && nohup .venv/bin/uvicorn app.main:app \
+        --port "$BACKEND_PORT" >>"$LOG_DIR/backend.log" 2>&1 & )
+}
+
+start_frontend() {
+    if listening "$FRONTEND_PORT"; then
+        echo "frontend already up on :$FRONTEND_PORT"
+        return 0
+    fi
+    if [[ ! -d "$REPO/frontend/node_modules" ]]; then
+        echo "ERROR: no node_modules -- run 'npm install' in frontend/" >&2
+        notify -u critical "Frontend deps missing" "Run 'npm install' in frontend/"
+        return 1
+    fi
+    echo "starting frontend on :$FRONTEND_PORT"
+    ( cd "$REPO/frontend" && nohup npm run dev -- --port "$FRONTEND_PORT" \
+        >>"$LOG_DIR/frontend.log" 2>&1 & )
+}
+
+wait_for() {
+    local port=$1 name=$2
+    for _ in $(seq 1 60); do
+        listening "$port" && return 0
+        sleep 0.5
+    done
+    echo "ERROR: $name did not come up on :$port within 30s" >&2
+    notify -u critical "EVE Bargain: $name failed to start" "See $LOG_DIR/$name.log"
+    return 1
+}
+
+open_tab() {
+    # Brave is a Flatpak on this machine; fall back to a native install, then
+    # to whatever the desktop considers the default browser.
+    if flatpak info com.brave.Browser >/dev/null 2>&1; then
+        setsid flatpak run com.brave.Browser "$URL" >/dev/null 2>&1 &
+    elif command -v brave-browser >/dev/null 2>&1; then
+        setsid brave-browser "$URL" >/dev/null 2>&1 &
+    elif command -v brave >/dev/null 2>&1; then
+        setsid brave "$URL" >/dev/null 2>&1 &
+    else
+        setsid xdg-open "$URL" >/dev/null 2>&1 &
+    fi
+}
+
+stop_all() {
+    pkill -f "uvicorn app.main:app" && echo "stopped backend" || echo "backend not running"
+    pkill -f "$REPO/frontend/node_modules/.bin/vite" && echo "stopped frontend" \
+        || echo "frontend not running"
+}
+
+case "${1:-start}" in
+    stop)
+        stop_all
+        ;;
+    logs)
+        tail -f "$LOG_DIR"/backend.log "$LOG_DIR"/frontend.log
+        ;;
+    start)
+        start_backend || exit 1
+        start_frontend || exit 1
+        wait_for "$BACKEND_PORT" backend || exit 1
+        wait_for "$FRONTEND_PORT" frontend || exit 1
+        open_tab
+        echo "EVE Bargain ready at $URL (logs in $LOG_DIR)"
+        ;;
+    *)
+        echo "usage: $(basename "$0") [start|stop|logs]" >&2
+        exit 2
+        ;;
+esac

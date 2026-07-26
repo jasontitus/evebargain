@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=EVE Bargain
+GenericName=Market Arbitrage Alerts
+Comment=Start the EVE Bargain service and open it in a browser tab
+Exec=__REPO__/scripts/evebargain start
+Icon=evebargain
+Terminal=false
+Categories=Game;
+Keywords=eve;market;trading;arbitrage;
+StartupNotify=true
+Actions=Stop;Logs;
+
+[Desktop Action Stop]
+Name=Stop EVE Bargain
+Exec=__REPO__/scripts/evebargain stop
+
+[Desktop Action Logs]
+Name=View Logs
+Exec=x-terminal-emulator -e __REPO__/scripts/evebargain logs
