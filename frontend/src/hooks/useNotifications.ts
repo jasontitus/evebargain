@@ -14,18 +14,22 @@ export function useNotifications() {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(title, {
         body,
-        icon: '/favicon.ico',
+        icon: '/notification-icon.png',
         tag: 'evebargain-alert',
       });
     }
 
-    // Sound notification
+    // Sound notification. WAV rather than MP3 so the file can be generated
+    // without shipping an encoder -- every current browser decodes it.
     if (!audioRef.current) {
-      audioRef.current = new Audio('/notification.mp3');
+      audioRef.current = new Audio('/notification.wav');
       audioRef.current.volume = 0.5;
     }
+    // Rewind so back-to-back alerts re-trigger instead of being ignored while
+    // the previous play is still in progress.
+    audioRef.current.currentTime = 0;
     audioRef.current.play().catch(() => {
-      // Audio play may be blocked by browser until user interaction
+      // Autoplay stays blocked until the user has interacted with the page.
     });
   }, []);
 
