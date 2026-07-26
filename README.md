@@ -71,6 +71,8 @@ uvicorn app.main:app --reload
 
 The backend starts at `http://localhost:8000`. On first boot it creates the SQLite database and tables automatically.
 
+This port serves the **API only** -- there is no web interface on it. Confirm it is healthy with `http://localhost:8000/api/health`, and browse the endpoints at `http://localhost:8000/docs`. Open the app itself at the frontend URL in the next step.
+
 ### 3. Frontend
 
 ```bash
@@ -79,7 +81,7 @@ npm install
 npm run dev
 ```
 
-The frontend starts at `http://localhost:5173` with a proxy to the backend.
+The frontend starts at `http://localhost:5173` with a proxy to the backend. **This is the URL to open in your browser** -- it serves the UI and forwards `/api` and `/ws` to port 8000.
 
 ### 4. Load Static Data
 
@@ -109,13 +111,29 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- Frontend: `http://localhost:3000`
+- Frontend (open this one): `http://localhost:3000`
 - Backend API: `http://localhost:8000`
+
+## Troubleshooting
+
+**`{"detail":"Not Found"}` in the browser**
+
+You are on the backend port. `http://localhost:8000` serves the API only -- the UI runs separately, at `http://localhost:5173` with `npm run dev`, or `http://localhost:3000` under Docker. The backend is fine if `http://localhost:8000/api/health` returns `{"status":"ok"}`.
+
+**Login bounces to an EVE SSO error page**
+
+`EVE_CLIENT_ID` / `EVE_SECRET_KEY` are not set. Put `.env` in the repo root (next to `docker-compose.yml`), not in `backend/`, and restart the backend -- it logs a warning at startup when the credentials are missing.
+
+**`Invalid redirect_uri` from EVE SSO**
+
+The callback registered on your EVE developer application must match `EVE_CALLBACK_URL` exactly, including port -- `http://localhost:8000/api/auth/callback` by default.
 
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/` | API index -- version and where the UI lives |
+| GET | `/api/health` | Health check |
 | GET | `/api/auth/login` | Redirect to EVE SSO |
 | GET | `/api/auth/callback` | OAuth callback handler |
 | GET | `/api/auth/me` | Current user info |
