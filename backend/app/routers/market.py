@@ -8,10 +8,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User, UserConfig
 from app.models.market import MarketCache
-from app.schemas.market import ArbitrageResult, MarketDealResponse
+from app.schemas.market import (
+    ArbitrageResult,
+    MarketDealResponse,
+    RegionListResponse,
+    RegionSummary,
+)
 from app.services.price_comparator import find_arbitrage
-from app.services.location import get_region_name
+from app.services.location import get_region_name, list_regions as get_all_regions
+from app.services.market_fetcher import (
+    get_tracked_type_ids,
+    update_jita_cache,
+    update_market_cache,
+)
 from app.tasks.scheduler import scan_market_for_user
+from app.utils.eve_constants import THE_FORGE_REGION_ID
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -28,18 +39,51 @@ async def _get_authenticated_user(
     return user
 
 
+@router.get("/regions", response_model=RegionListResponse)
+async def list_market_regions(
+    user: User = Depends(_get_authenticated_user),
+):
+    """Every k-space region, for the browse-elsewhere dropdown.
+
+    The Forge is omitted: it's the reference market every other region is
+    priced against, so there is nothing to compare it to. Offering it would
+    just be an option that always errors.
+    """
+    regions = await get_all_regions()
+    return RegionListResponse(
+        regions=[
+            RegionSummary(region_id=rid, name=name)
+            for rid, name in sorted(regions.items(), key=lambda kv: kv[1])
+            if rid != THE_FORGE_REGION_ID
+        ],
+        current_region_id=user.current_region_id,
+    )
+
+
 @router.get("/deals", response_model=MarketDealResponse)
 async def get_deals(
     min_discount: float = 0.0,
     sort_by: str = "discount",
+    region_id: int | None = None,
     user: User = Depends(_get_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get current arbitrage opportunities for the user's region."""
-    if not user.current_region_id:
+    """Arbitrage opportunities for the user's region, or a browsed one.
+
+    Passing region_id looks somewhere other than where the character is, which
+    is how the region dropdown works.
+    """
+    target_region = region_id or user.current_region_id
+    if not target_region:
         raise HTTPException(
             status_code=400,
             detail="Location not yet detected. Make sure you're logged into EVE.",
+        )
+
+    if target_region == THE_FORGE_REGION_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="The Forge is the reference market -- there's nothing to compare it against.",
         )
 
     # Get user config
@@ -50,8 +94,16 @@ async def get_deals(
     if not user_config:
         raise HTTPException(status_code=400, detail="Config not found")
 
+    # A browsed region may have never been fetched, or gone stale since. The
+    # freshness guard inside these makes a repeat view of the same region free.
+    if region_id is not None:
+        tracked = json.loads(user_config.tracked_category_ids)
+        type_ids = await get_tracked_type_ids(db, tracked)
+        await update_market_cache(db, target_region, type_filter=type_ids)
+        await update_jita_cache(db, type_ids=type_ids)
+
     # Find deals
-    deals = await find_arbitrage(db, user.current_region_id, user_config)
+    deals = await find_arbitrage(db, target_region, user_config)
 
     # Apply additional filters
     if min_discount > 0:
@@ -64,21 +116,22 @@ async def get_deals(
         deals.sort(key=lambda d: d.type_name)
     # Default sort is by discount (already sorted)
 
-    region_name = await get_region_name(user.current_region_id)
+    region_name = await get_region_name(target_region)
 
     # Get last update time
     last_updated_result = await db.execute(
         select(func.max(MarketCache.fetched_at)).where(
-            MarketCache.region_id == user.current_region_id
+            MarketCache.region_id == target_region
         )
     )
     last_updated = last_updated_result.scalar()
 
     return MarketDealResponse(
         deals=deals,
-        region_id=user.current_region_id,
+        region_id=target_region,
         region_name=region_name,
         last_updated=last_updated.isoformat() if last_updated else None,
+        is_browsed=target_region != user.current_region_id,
     )
 
 

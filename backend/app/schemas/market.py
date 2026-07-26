@@ -18,3 +18,16 @@ class MarketDealResponse(BaseModel):
     region_id: int
     region_name: str
     last_updated: str | None = None
+    # True when these deals are for a region the user picked from the dropdown
+    # rather than the one their character is actually sitting in.
+    is_browsed: bool = False
+
+
+class RegionSummary(BaseModel):
+    region_id: int
+    name: str
+
+
+class RegionListResponse(BaseModel):
+    regions: list[RegionSummary]
+    current_region_id: int | None = None

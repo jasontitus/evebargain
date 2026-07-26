@@ -78,6 +78,31 @@ class ESIClient:
             response.raise_for_status()
             return response
 
+    async def post(
+        self,
+        path: str,
+        json: object,
+        token: str | None = None,
+    ) -> httpx.Response:
+        """POST to ESI. Used for bulk lookups like /universe/names/, which
+        resolve many IDs in one request instead of one GET each."""
+        client = await self.get_client()
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        async with _request_semaphore:
+            response = await client.post(path, json=json, headers=headers)
+
+            if response.status_code == 420:
+                reset = int(response.headers.get("X-Esi-Error-Limit-Reset", 60))
+                logger.warning(f"ESI error limited, waiting {reset}s")
+                await asyncio.sleep(reset)
+                response = await client.post(path, json=json, headers=headers)
+
+            response.raise_for_status()
+            return response
+
     async def get_json(
         self,
         path: str,

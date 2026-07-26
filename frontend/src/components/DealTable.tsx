@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ArbitrageResult } from '../types';
-import { getDeals, refreshMarket } from '../api/market';
+import type { ArbitrageResult, RegionSummary } from '../types';
+import { getDeals, getRegions, refreshMarket } from '../api/market';
 import { formatISK, formatISKCompact, formatPercent } from '../utils/format';
 
 type SortField = 'discount' | 'profit' | 'name';
@@ -12,19 +12,33 @@ export function DealTable() {
   const [sortBy, setSortBy] = useState<SortField>('discount');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [regions, setRegions] = useState<RegionSummary[]>([]);
+  // null means "follow the character" -- the default live behaviour.
+  const [selectedRegion, setSelectedRegion] = useState<number | null>(null);
+  const [regionName, setRegionName] = useState<string | null>(null);
+  const [isBrowsed, setIsBrowsed] = useState(false);
 
   const fetchDeals = useCallback(async () => {
     try {
       setError(null);
-      const data = await getDeals(sortBy);
+      const data = await getDeals(sortBy, 0, selectedRegion);
       setDeals(data.deals);
       setLastUpdated(data.last_updated);
+      setRegionName(data.region_name);
+      setIsBrowsed(data.is_browsed);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load deals');
     } finally {
       setLoading(false);
     }
-  }, [sortBy]);
+  }, [sortBy, selectedRegion]);
+
+  useEffect(() => {
+    getRegions()
+      .then((data) => setRegions(data.regions))
+      // A failed region list only costs the dropdown; the table still works.
+      .catch(() => setRegions([]));
+  }, []);
 
   useEffect(() => {
     fetchDeals();
@@ -37,6 +51,13 @@ export function DealTable() {
     setRefreshing(true);
     try {
       setError(null);
+      // /market/refresh only ever rescans where the character is. When browsing
+      // elsewhere, refetching the deals is the refresh -- the deals endpoint
+      // re-pulls that region itself once its cache goes stale.
+      if (selectedRegion != null) {
+        await fetchDeals();
+        return;
+      }
       await refreshMarket();
       // Wait a moment for the backend to process, then refetch
       setTimeout(fetchDeals, 2000);
@@ -56,8 +77,26 @@ export function DealTable() {
   return (
     <div className="deal-table-container">
       <div className="deal-table-header">
-        <h2>Arbitrage Opportunities ({deals.length})</h2>
+        <h2>
+          Arbitrage Opportunities ({deals.length})
+          {regionName && <span className="region-tag"> in {regionName}</span>}
+        </h2>
         <div className="deal-controls">
+          <select
+            value={selectedRegion ?? ''}
+            onChange={(e) =>
+              setSelectedRegion(e.target.value === '' ? null : Number(e.target.value))
+            }
+            className="sort-select region-select"
+            title="Browse another region's market"
+          >
+            <option value="">Where I am (live)</option>
+            {regions.map((r) => (
+              <option key={r.region_id} value={r.region_id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortField)}
@@ -77,6 +116,16 @@ export function DealTable() {
         </div>
       </div>
 
+      {isBrowsed && (
+        <div className="browsing-banner">
+          Browsing {regionName} -- you aren't there. Alerts still fire for
+          wherever your character actually is.{' '}
+          <button className="link-btn" onClick={() => setSelectedRegion(null)}>
+            Back to my region
+          </button>
+        </div>
+      )}
+
       {lastUpdated && (
         <p className="last-updated">
           Last updated: {new Date(lastUpdated).toLocaleTimeString()}
@@ -87,7 +136,7 @@ export function DealTable() {
 
       {deals.length === 0 ? (
         <div className="no-deals">
-          No arbitrage opportunities found in this region.
+          No arbitrage opportunities found in {regionName ?? 'this region'}.
           Try adjusting your filters or wait for the next market scan.
         </div>
       ) : (

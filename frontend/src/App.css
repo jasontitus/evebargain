@@ -309,6 +309,45 @@ body {
   margin-bottom: 12px;
 }
 
+/* The region dropdown carries the most names, so let it run wider than the
+   sort control while still truncating rather than pushing the row around. */
+.region-select {
+  max-width: 190px;
+}
+
+.region-tag {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* Browsing another region is a mode, not a state -- say so plainly, since
+   alerts keep tracking the character's real location either way. */
+.browsing-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--yellow-bg);
+  border: 1px solid var(--yellow);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.link-btn:hover { color: var(--accent-hover); }
+
 .no-deals {
   text-align: center;
   padding: 32px;

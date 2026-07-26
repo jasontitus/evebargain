@@ -1,5 +1,5 @@
+import asyncio
 import logging
-from functools import lru_cache
 
 from app.services.esi_client import esi_client
 
@@ -8,6 +8,43 @@ logger = logging.getLogger(__name__)
 # In-memory cache for system->region lookups (static data, never changes)
 _system_region_cache: dict[int, int] = {}
 _region_name_cache: dict[int, str] = {}
+
+# id -> name for every region with a real market, built once per process.
+_all_regions_cache: dict[int, str] = {}
+_all_regions_lock = asyncio.Lock()
+
+# Wormhole space starts at 11000000, and abyssal/void regions above it have no
+# NPC stations and so no market orders. Listing them would be 44 dead entries.
+K_SPACE_MAX_REGION_ID = 11000000
+
+
+async def list_regions() -> dict[int, str]:
+    """All k-space region IDs mapped to names.
+
+    Two ESI calls total, then cached for the life of the process -- the
+    universe doesn't get new regions. Names are resolved in a single bulk
+    /universe/names/ POST rather than one GET per region.
+    """
+    if _all_regions_cache:
+        return _all_regions_cache
+
+    async with _all_regions_lock:
+        # Another coroutine may have populated it while we waited.
+        if _all_regions_cache:
+            return _all_regions_cache
+
+        response = await esi_client.get("/universe/regions/")
+        region_ids = [r for r in response.json() if r < K_SPACE_MAX_REGION_ID]
+
+        resolved = await esi_client.post("/universe/names/", json=region_ids)
+        for entry in resolved.json():
+            if entry.get("category") == "region":
+                _all_regions_cache[entry["id"]] = entry["name"]
+                _region_name_cache[entry["id"]] = entry["name"]
+
+        logger.info(f"Loaded {len(_all_regions_cache)} k-space regions")
+
+    return _all_regions_cache
 
 
 async def get_character_location(character_id: int, token: str) -> dict:

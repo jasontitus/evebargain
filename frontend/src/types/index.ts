@@ -46,6 +46,18 @@ export interface MarketDealResponse {
   region_id: number;
   region_name: string;
   last_updated: string | null;
+  /** True when showing a region picked from the dropdown, not the live one. */
+  is_browsed: boolean;
+}
+
+export interface RegionSummary {
+  region_id: number;
+  name: string;
+}
+
+export interface RegionListResponse {
+  regions: RegionSummary[];
+  current_region_id: number | null;
 }
 
 export interface Alert {
