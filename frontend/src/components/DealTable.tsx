@@ -36,11 +36,14 @@ export function DealTable() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
+      setError(null);
       await refreshMarket();
       // Wait a moment for the backend to process, then refetch
       setTimeout(fetchDeals, 2000);
-    } catch {
-      setError('Failed to refresh market data');
+    } catch (e) {
+      // Surface the server's own detail -- "Location not yet detected" is a
+      // very different problem from the market fetch actually failing.
+      setError(e instanceof Error ? e.message : 'Failed to refresh market data');
     } finally {
       setRefreshing(false);
     }

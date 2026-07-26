@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
@@ -52,8 +53,16 @@ async def poll_user_location(user_id: int):
             logger.error(f"Location poll failed for user {user_id}: {e}")
 
 
-async def scan_market_for_user(user_id: int, region_id: int | None = None):
-    """Scan market data and find arbitrage opportunities for a user."""
+async def scan_market_for_user(
+    user_id: int, region_id: int | None = None, force: bool = False
+):
+    """Scan market data and find arbitrage opportunities for a user.
+
+    force=True bypasses the cache-freshness guard for the *local* region only.
+    A manual refresh should re-read the region the user is sitting in, but Jita
+    is ~275 pages and is already kept current by the global refresh job, so
+    repeated button presses must not drag it along.
+    """
     async with async_session() as db:
         user = await db.get(User, user_id)
         if not user:
@@ -75,7 +84,9 @@ async def scan_market_for_user(user_id: int, region_id: int | None = None):
             type_ids = await get_tracked_type_ids(db, tracked_categories)
 
             # Update both local region and Jita market data
-            await update_market_cache(db, target_region, type_filter=type_ids)
+            await update_market_cache(
+                db, target_region, type_filter=type_ids, force=force
+            )
             await update_jita_cache(db, type_ids=type_ids)
 
             # Find arbitrage opportunities
@@ -136,6 +147,11 @@ def setup_user_polling(user_id: int):
         args=[user_id],
         id=job_id,
         replace_existing=True,
+        # Fire immediately rather than one interval from now. Until the first
+        # poll lands the user has no current_region_id, and every market
+        # endpoint rejects on it -- so the dashboard would 400 for the whole
+        # first interval after login.
+        next_run_time=datetime.now(timezone.utc),
     )
     logger.info(f"Started location polling for user {user_id}")
 
