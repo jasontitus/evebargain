@@ -181,9 +181,13 @@ body {
 
 /* ===== Main Content ===== */
 .app-main {
-  max-width: 1280px;
+  /* This is a second-monitor dashboard -- a dense table of numbers is the whole
+     point, so let it use the window instead of centring it in a 1280px column
+     and wasting the space on both sides. The cap only stops line lengths from
+     becoming absurd on ultrawides. */
+  max-width: 2200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 20px 24px;
 }
 
 /* ===== Region Indicator ===== */
@@ -251,13 +255,57 @@ body {
 /* ===== Dashboard Layout ===== */
 .dashboard-content {
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 24px;
+  /* The alert feed used a fixed 380px at every window size, which squeezed the
+     deal table -- the thing you're actually reading -- hardest on the narrow
+     screens that could least afford it. */
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
 }
 
-@media (max-width: 900px) {
-  .dashboard-content {
+/* Collapsed, the feed shrinks to its toggle and the table takes the rest. */
+.dashboard-content.alerts-collapsed {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.alerts-toggle {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.78rem;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.alerts-toggle:hover {
+  border-color: var(--eve-amber-dim);
+  color: var(--eve-amber);
+}
+
+.alerts-collapsed .alerts-toggle {
+  /* Vertical strip down the side rather than a full-width bar. */
+  writing-mode: vertical-rl;
+  width: auto;
+  padding: 12px 8px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-content,
+  .dashboard-content.alerts-collapsed {
     grid-template-columns: 1fr;
+  }
+
+  .alerts-collapsed .alerts-toggle {
+    writing-mode: horizontal-tb;
+    width: 100%;
+    padding: 8px 10px;
   }
 }
 
@@ -516,9 +564,35 @@ body {
   background: var(--bg-card);
 }
 
+/* Category reduced to a glyph: one character instead of "Materials &
+   Components", with the full name on the title tooltip and in the filter
+   dropdown. Numeric columns get the width that frees up. */
+.cat-col {
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.cat-icon {
+  font-size: 1rem;
+  line-height: 1;
+  cursor: default;
+}
+
+.deal-table th.cat-col {
+  font-size: 0.62rem;
+  letter-spacing: 0.4px;
+}
+
+/* Nearby results carry two extra columns; give them room before the scroll
+   container has to kick in. */
+.deal-table-wide {
+  min-width: 880px;
+}
+
 .deal-table {
   width: 100%;
-  min-width: 720px;
+  min-width: 640px;
   border-collapse: collapse;
   font-size: 0.88rem;
   /* Widths come from <colgroup>, not content. Content-driven columns made

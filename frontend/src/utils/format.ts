@@ -33,6 +33,18 @@ export function timeAgo(dateStr: string): string {
 }
 
 /**
+ * Compact ISK with no unit suffix, for dense tables where the column header
+ * already says the unit and repeating " ISK" on every cell just costs width.
+ * e.g., 1500000 -> "1.50M"
+ */
+export function formatISKShort(value: number): string {
+  if (value >= 1_000_000_000) return (value / 1_000_000_000).toFixed(2) + 'B';
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(2) + 'M';
+  if (value >= 1_000) return (value / 1_000).toFixed(1) + 'K';
+  return value.toFixed(0);
+}
+
+/**
  * Compact ISK format for large numbers.
  * e.g., 1500000 -> "1.5M ISK"
  */

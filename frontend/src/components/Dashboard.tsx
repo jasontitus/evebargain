@@ -19,6 +19,15 @@ export function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dealRefreshKey, setDealRefreshKey] = useState(0);
   const [progress, setProgress] = useState<FetchProgress | null>(null);
+  // Remembered across sessions -- someone who wants the width back wants it
+  // every time, not once per page load.
+  const [alertsOpen, setAlertsOpen] = useState(
+    () => localStorage.getItem('evebargain.alertsOpen') !== 'false'
+  );
+
+  useEffect(() => {
+    localStorage.setItem('evebargain.alertsOpen', String(alertsOpen));
+  }, [alertsOpen]);
   const progressTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => () => clearTimeout(progressTimeout.current), []);
@@ -114,12 +123,20 @@ export function Dashboard() {
         </button>
       )}
 
-      <div className="dashboard-content">
+      <div className={`dashboard-content${alertsOpen ? '' : ' alerts-collapsed'}`}>
         <div className="deals-section">
           <DealTable key={dealRefreshKey} progress={progress} />
         </div>
         <div className="alerts-section">
-          <AlertFeed newAlerts={newAlerts} />
+          <button
+            className="alerts-toggle"
+            onClick={() => setAlertsOpen((open) => !open)}
+            title={alertsOpen ? 'Hide the alert feed' : 'Show the alert feed'}
+            aria-expanded={alertsOpen}
+          >
+            {alertsOpen ? '›  Alerts' : `‹  Alerts${newAlerts.length ? ` (${newAlerts.length})` : ''}`}
+          </button>
+          {alertsOpen && <AlertFeed newAlerts={newAlerts} />}
         </div>
       </div>
     </div>

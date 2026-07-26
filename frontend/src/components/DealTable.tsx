@@ -6,7 +6,7 @@ import type {
   RouteFlag,
 } from '../types';
 import { getDeals, getRegions, getNearbyDeals, refreshMarket } from '../api/market';
-import { formatISK, formatISKCompact, formatPercent } from '../utils/format';
+import { formatISK, formatISKShort, formatPercent } from '../utils/format';
 import { FetchProgressBar } from './FetchProgressBar';
 
 type SortField = 'discount' | 'profit' | 'name' | 'jumps';
@@ -22,6 +22,23 @@ interface NearbyMeta {
 }
 
 const JUMP_RANGES = [5, 10, 15, 20];
+
+/**
+ * A glyph per category, so the column costs one character instead of
+ * "Materials & Components". The full name stays in the title tooltip and in
+ * the filter dropdown, which is where you'd go looking for it by name.
+ */
+const CATEGORY_ICONS: Record<string, string> = {
+  Ships: '🚀',
+  Modules: '🔧',
+  'Ammunition & Charges': '💥',
+  Drones: '🛸',
+  'Ship SKINs': '🎨',
+  'Implants & Boosters': '💊',
+  'Materials & Components': '⛏️',
+  Blueprints: '📘',
+  'Planetary Materials': '🪐',
+};
 
 const FLAG_LABELS: Record<RouteFlag, string> = {
   shortest: 'Shortest route',
@@ -322,7 +339,7 @@ export function DealTable({ progress = null }: DealTableProps) {
           <option value="">All categories</option>
           {availableCategories.map((c) => (
             <option key={c} value={c}>
-              {c}
+              {CATEGORY_ICONS[c] ? `${CATEGORY_ICONS[c]}  ${c}` : c}
             </option>
           ))}
         </select>
@@ -384,30 +401,36 @@ export function DealTable({ progress = null }: DealTableProps) {
         </div>
       ) : (
         <div className="deal-table-scroll">
-          <table className="deal-table">
+          <table className={showsLocation ? 'deal-table deal-table-wide' : 'deal-table'}>
             {/* Fixed proportions. With content-driven widths the columns
                 resized on every keystroke in the filter box. */}
+            {/* Fixed pixel widths on every column except Item, which takes the
+                remainder. Percentages meant the numeric columns shrank as
+                columns were added, and the discount -- the whole point of the
+                table -- was the first thing to get clipped. */}
             <colgroup>
-              <col style={{ width: showsLocation ? '21%' : '26%' }} />
-              <col style={{ width: showsLocation ? '12%' : '14%' }} />
-              {showsLocation && <col style={{ width: '14%' }} />}
-              {showsLocation && <col style={{ width: '7%' }} />}
-              <col style={{ width: showsLocation ? '11%' : '13%' }} />
-              <col style={{ width: showsLocation ? '11%' : '13%' }} />
-              <col style={{ width: showsLocation ? '8%' : '10%' }} />
-              <col style={{ width: showsLocation ? '9%' : '12%' }} />
-              <col style={{ width: showsLocation ? '7%' : '12%' }} />
+              <col />
+              <col style={{ width: '42px' }} />
+              {showsLocation && <col style={{ width: '116px' }} />}
+              {showsLocation && <col style={{ width: '62px' }} />}
+              <col style={{ width: '84px' }} />
+              <col style={{ width: '84px' }} />
+              <col style={{ width: '72px' }} />
+              <col style={{ width: '92px' }} />
+              <col style={{ width: '84px' }} />
             </colgroup>
             <thead>
               <tr>
                 <th>Item</th>
-                <th>Category</th>
+                <th className="cat-col" title="Category">
+                  Cat
+                </th>
                 {showsLocation && <th>Region</th>}
                 {showsLocation && <th className="num">Jumps</th>}
                 <th className="num">Local</th>
                 <th className="num">Jita</th>
                 <th className="num">Disc</th>
-                <th className="num">Profit/Unit</th>
+                <th className="num">Profit/u</th>
                 <th className="num">Volume</th>
               </tr>
             </thead>
@@ -420,7 +443,15 @@ export function DealTable({ progress = null }: DealTableProps) {
                   <td className="item-name-cell" title={deal.type_name}>
                     {deal.type_name}
                   </td>
-                  <td className="category-cell">{deal.category_name ?? '--'}</td>
+                  <td
+                    className="cat-col cat-icon"
+                    title={deal.category_name ?? 'Unknown category'}
+                    aria-label={deal.category_name ?? 'Unknown category'}
+                  >
+                    {deal.category_name
+                      ? CATEGORY_ICONS[deal.category_name] ?? '•'
+                      : '•'}
+                  </td>
                   {showsLocation && (
                     <td className="category-cell" title={deal.region_name}>
                       {deal.region_name}
@@ -429,10 +460,19 @@ export function DealTable({ progress = null }: DealTableProps) {
                   {showsLocation && (
                     <td className="num jumps-cell">{deal.jumps ?? '--'}</td>
                   )}
-                  <td className="num">{formatISK(deal.local_price)}</td>
-                  <td className="num muted">{formatISK(deal.jita_price)}</td>
+                  <td className="num" title={formatISK(deal.local_price)}>
+                    {formatISKShort(deal.local_price)}
+                  </td>
+                  <td className="num muted" title={formatISK(deal.jita_price)}>
+                    {formatISKShort(deal.jita_price)}
+                  </td>
                   <td className="num discount-cell">{formatPercent(deal.discount_pct)}</td>
-                  <td className="num profit-cell">{formatISKCompact(deal.profit_per_unit)}</td>
+                  <td
+                    className="num profit-cell"
+                    title={formatISK(deal.profit_per_unit)}
+                  >
+                    {formatISKShort(deal.profit_per_unit)}
+                  </td>
                   <td className="num muted">{deal.volume_available.toLocaleString()}</td>
                 </tr>
               ))}
