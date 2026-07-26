@@ -46,6 +46,12 @@ This is built for the player who's already traveling. You're not going out of yo
    - Set callback URL: `http://localhost:8000/api/auth/callback`
    - Note your Client ID and Secret Key
 
+   A `localhost` callback is fine -- EVE SSO allows it, no public URL or tunnel
+   needed. Note the callback points at the **backend** port (8000), not the UI:
+   the backend exchanges the OAuth code, then sends you to `FRONTEND_URL`. The
+   URL registered here must match `EVE_CALLBACK_URL` in `.env` character for
+   character, port included.
+
 2. **Python 3.11+** and **Node.js 18+**
 
 ## Quick Start
@@ -123,6 +129,12 @@ You are on the backend port. `http://localhost:8000` serves the API only -- the 
 **Login bounces to an EVE SSO error page**
 
 `EVE_CLIENT_ID` / `EVE_SECRET_KEY` are not set. Put `.env` in the repo root (next to `docker-compose.yml`), not in `backend/`, and restart the backend -- it logs a warning at startup when the credentials are missing.
+
+**Logging in dumps me on JSON instead of the app**
+
+`FRONTEND_URL` does not match where you actually browse the UI. It defaults to
+`http://localhost:5173`; set it to `http://localhost:3000` under Docker, or to
+whatever port Vite picked if 5173 was taken.
 
 **`Invalid redirect_uri` from EVE SSO**
 

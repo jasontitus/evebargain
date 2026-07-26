@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     eve_secret_key: str = ""
     eve_callback_url: str = "http://localhost:8000/api/auth/callback"
 
+    # Where the browser reaches the web interface. The SSO callback lands on
+    # this backend, so it needs an absolute URL to send the user back to --
+    # "/" would leave them on the API port. Vite dev server by default; set
+    # FRONTEND_URL=http://localhost:3000 when running under Docker.
+    frontend_url: str = "http://localhost:5173"
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./evebargain.db"
 

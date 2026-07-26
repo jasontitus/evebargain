@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User, UserConfig
 from app.schemas.user import UserResponse
@@ -77,7 +78,8 @@ async def callback(
     setup_user_polling(user.id)
     setup_market_refresh(user.id)
 
-    return RedirectResponse(url="/")
+    # Back to the web interface, not to "/" -- that is this API port.
+    return RedirectResponse(url=settings.frontend_url or "/")
 
 
 @router.get("/me", response_model=UserResponse)

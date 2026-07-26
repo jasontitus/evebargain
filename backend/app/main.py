@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Where the React app is served. This process only serves the API, so anyone
 # who opens the backend port in a browser needs pointing at the real UI.
-FRONTEND_URL = "http://localhost:5173"
+FRONTEND_URL = settings.frontend_url
 
 
 @asynccontextmanager
@@ -63,7 +63,11 @@ app.add_middleware(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    # The two documented dev origins, plus FRONTEND_URL so a custom port does
+    # not need a code change to be allowed through.
+    allow_origins=sorted(
+        {"http://localhost:5173", "http://localhost:3000", FRONTEND_URL}
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
